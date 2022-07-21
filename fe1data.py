@@ -93,7 +93,7 @@ def MakeMapBankInfo(rom, bank_idx, base_idx, num_maps, map_tbl_addr):
 
 Map = namedtuple("Map", "map_idx bank addr hdr data".split())
 
-class MapNpObject(LittleEndianStructure):
+class MapNpc(LittleEndianStructure):
 	_pack_ = True
 	_fields_ = (
 		("id", c_uint8),
@@ -105,7 +105,7 @@ class MapNpObject(LittleEndianStructure):
 		("item_values", c_uint8 * 4),
 	)
 
-class MapObject(LittleEndianStructure):
+class MapPc(LittleEndianStructure):
 	_pack_ = True
 	_fields_ = (
 		("id", c_uint8),
@@ -131,6 +131,22 @@ class MapObject(LittleEndianStructure):
 		("item_values", c_uint8 * 4),
 	)
 
+class ShopType(IntEnum):
+	Armory = 1
+	Shop = 2
+	Arena = 3
+	Storage = 4
+	SecretShop = 5
+
+class MapShop(Structure):
+	_pack_ = True
+	_fields_ = (
+		("y", c_uint8),
+		("x", c_uint8),
+		("type", c_uint8),
+		("inv_idx", c_uint8),
+	)
+
 class PreMissionInfo(Structure):
 	_pack_ = True
 	_fields_ = (
@@ -141,8 +157,8 @@ class PreMissionInfo(Structure):
 class MissionDialogInfo(Structure):
 	_pack_ = True
 	_fields_ = (
-		("y_metatile", c_uint8),
-		("x_metatile", c_uint8),
+		("y", c_uint8),
+		("x", c_uint8),
 		("unknown2", c_uint8),
 		("dialog_idx", c_uint8),
 		("unknown4", c_uint8),
@@ -152,7 +168,7 @@ ScriptInfo = namedtuple("ScriptInfo", ("bank_idx", "set_idx", "script_idx", "scr
 
 class FireEmblem1Data:
 	def __init__(self, rom):
-		rom = self._rom = bytearray(rom)
+		rom = self._rom = rom
 		hdr = self._hdr = iNesHeader.from_buffer(rom)
 
 		if hdr.sig != b"NES\x1a" or hdr.num_prg_16kbs != 0x10 or hdr.num_chr_8kbs != 0x10 or hdr.flags9 != 0:
@@ -264,8 +280,8 @@ class FireEmblem1Data:
 		self.map_pc_lists = {}
 		
 		for addr_list, obj_list, obj_type in (
-			(self.map_npc_list_addrs, self.map_npc_lists, MapNpObject),
-			(self.map_pc_list_addrs, self.map_pc_lists, MapObject),
+			(self.map_npc_list_addrs, self.map_npc_lists, MapNpc),
+			(self.map_pc_list_addrs, self.map_pc_lists, MapPc),
 		):
 			for map_idx, list_addr in enumerate(addr_list):
 				offs = list_offs = leca(list_addr)
@@ -286,6 +302,23 @@ class FireEmblem1Data:
 			
 			l = (YxCoordinate * num_entries).from_buffer(rom, offs + 1) if num_entries else []
 			self.map_start_loc_lists[map_idx + 1] = l
+
+		leca = self.map_shop_leca = get_leca4((11, 15))
+		self.map_shop_list_addrs = (c_uint16_le * 25).from_buffer(rom, leca(0xa4ff))
+		self.map_shop_lists = {}
+		for map_idx, list_addr in enumerate(self.map_shop_list_addrs):
+			offs = leca(list_addr)
+			num_entries = rom[offs::sizeof(MapShop)].index(0xf0)
+			shops = (MapShop * num_entries).from_buffer(rom, offs) if num_entries else []
+			self.map_shop_lists[map_idx + 1] = shops
+
+		self.inv_list_addrs = (c_uint16_le * 20).from_buffer(rom, leca(0xa6c2))
+		self.inv_lists = []
+		for inv_idx, list_addr in enumerate(self.inv_list_addrs):
+			offs = leca(list_addr)
+			num_entries = rom[offs:].index(0xf0)
+			inv = (c_uint8 * num_entries).from_buffer(rom, offs) if num_entries else []
+			self.inv_lists.append(inv)
 
 		return
 
@@ -374,10 +407,10 @@ class FireEmblem1Data:
 		return Metasprite(tile_attribs, tile_idcs)
 
 	def get_pre_miss_info(self, miss_idx):
-		return PreMissionInfo.from_buffer(self._rom, self.miss_info_leca(self.pre_miss_info_addrs[miss_idx]))
+		return PreMissionInfo.from_buffer(self._rom, self.miss_info_leca(self.pre_miss_info_addrs[miss_idx - 1]))
 
 	def get_miss_dlg_info(self, miss_idx):
-		offs = self.miss_info_leca(self.miss_dlg_addrs[miss_idx])
+		offs = self.miss_info_leca(self.miss_dlg_addrs[miss_idx - 1])
 		num_infos = self._rom[offs::sizeof(MissionDialogInfo)].index(0)
 		infos = (MissionDialogInfo * num_infos).from_buffer(self._rom, offs)
 

@@ -116,7 +116,7 @@ if __name__ == "__main__":
 		if make_webp:
 			SaveAnimWebp(name, number, frames, frame_times)
 
-	rom = Path(sys.argv[1]).read_bytes()
+	rom = bytearray(Path(sys.argv[1]).read_bytes())
 	out_path = Path("out")
 	out_path.mkdir(exist_ok = True)
 
@@ -131,14 +131,14 @@ if __name__ == "__main__":
 
 	leca = data.miss_info_leca
 	bank_set = data.pre_miss_script_bank_set
-	pre_miss_infos = [data.get_pre_miss_info(idx) for idx in range(len(data.pre_miss_info_addrs))]
-	pre_miss_scripts = {bank_set + (info.dialog_idx,): i for i, info in enumerate(pre_miss_infos)}
+	pre_miss_infos = [data.get_pre_miss_info(idx + 1) for idx in range(len(data.pre_miss_info_addrs))]
+	pre_miss_scripts = {bank_set + (info.dialog_idx,): i + 1 for i, info in enumerate(pre_miss_infos)}
 
 	bank_set = data.miss_dlg_script_bank_set
 	miss_dlgs = []
 	miss_dlg_scripts = colls.defaultdict(set)
 	for map_idx in range(len(data.miss_dlg_addrs)):
-		infos = data.get_miss_dlg_info(map_idx)
+		infos = data.get_miss_dlg_info(map_idx + 1)
 		miss_dlgs.append(infos)
 
 		for i, info in enumerate(infos):
