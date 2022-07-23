@@ -74,16 +74,34 @@ def get_leca4(banks):
 	return functools.partial(leca4, banks)
 
 class TextDataBase:
-	def __init__(self, rom, chr_start_offs):
+	def __init__(
+		self, 
+		rom, 
+		chr_start_offs,
+		script_params = None,
+		unit_name_params = None,
+		char_name_params = None,
+		enemy_name_params = None,
+		miss_name_params = None,
+		game_str_params = None,
+		):
 		self._rom = rom
 		self._chr_start_offs = chr_start_offs
 
-		self._script_addrs = {}
-		for bank_idx, set_lens in (
+		if not script_params:
+			script_params = (
 			(8, (0x33,)), 
 			(12, (0x5e,)),
 			(11, (0xb, 0x58)),  # There are 0x16 spots in the first table, but 0xb+ don't appear to point to valid data.
-			):
+			)
+		unit_name_params = unit_name_params or (0, 0xda1f, 0x18)
+		char_name_params = char_name_params or (0, 0xde2b, 0x35)
+		enemy_name_params = enemy_name_params or (0, 0xdfa4, 0x45)
+		miss_name_params = miss_name_params  or (0, 0xee08, 0x19)
+		game_str_params = game_str_params or (11, 0x8fc2, 0x48)
+
+		self._script_addrs = {}
+		for bank_idx, set_lens in script_params:
 			leca = get_leca4((bank_idx, 15))
 			set_addrs = (c_uint16_le * len(set_lens)).from_buffer(rom, leca(0xbfe0))
 			bank_sets = self._script_addrs[bank_idx] = []
@@ -92,7 +110,37 @@ class TextDataBase:
 				tbl_offs = leca(set_addr)
 				bank_sets.append((c_uint16_le * set_lens[set_idx]).from_buffer(self._rom, tbl_offs))
 
+		self._unit_name_addrs, self.unit_names = self._load_strings(*unit_name_params)
+		self._char_name_addrs, self.char_names = self._load_strings(*char_name_params)
+		self._enemy_name_addrs, self.enemy_names = self._load_strings(*enemy_name_params)
+		self._miss_name_addrs, self.miss_names = self._load_strings(
+			*miss_name_params, 
+			(ScriptOps.EndOfLine,), 
+		)
+		self._game_str_addrs, self.game_strs = self._load_strings(
+			*game_str_params,
+			(ScriptOps.EndOfLine, ScriptOps.EndScript),
+		)
+
 		return
+
+	def _load_strings(self, bank_idx, tbl_addr, num_entries, terms = (ScriptOps.EndScript,), include_term = None):
+		if include_term is None:
+			include_term = terms != (ScriptOps.EndScript,)
+		add_len = int(bool(include_term))
+
+		leca = get_leca4((bank_idx, 15))
+		addrs = (c_uint16_le * num_entries).from_buffer(self._rom, leca(tbl_addr))
+		strs = []
+		for addr in addrs:
+			offs = leca(addr)
+			# TODO: Replace with RE
+			lens = [self._rom.find(ch, offs, self._chr_start_offs) for ch in terms]
+			str_len = min(filter(lambda x: x >= 0, lens)) - offs
+			s = (c_uint8 * (str_len + add_len)).from_buffer(self._rom, offs)
+			strs.append(s)
+
+		return addrs, strs
 
 	def get_script_addrs(self):
 		return self._script_addrs

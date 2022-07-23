@@ -171,7 +171,7 @@ class FireEmblem1Data:
 		rom = self._rom = rom
 		hdr = self._hdr = iNesHeader.from_buffer(rom)
 
-		if hdr.sig != b"NES\x1a" or hdr.num_prg_16kbs != 0x10 or hdr.num_chr_8kbs != 0x10 or hdr.flags9 != 0:
+		if hdr.sig != b"NES\x1a" or hdr.num_prg_16kbs != 0x10 or hdr.num_chr_8kbs != 0x10 or hdr.flags7 != 0:
 			raise ValueError("ROM does not appear to be Fire Emblem")
 
 		chr_start_offs = self._chr_start_offs = hdr.num_prg_16kbs * 0x4000 + 0x10
@@ -385,6 +385,12 @@ class FireEmblem1Data:
 
 		self.get_script_addrs = self.text.get_script_addrs
 		self.translate_text = self.text.translate_text
+
+		self.unit_names = self.text.unit_names
+		self.char_names = self.text.char_names
+		self.enemy_names = self.text.enemy_names
+		self.miss_names = self.text.miss_names
+		self.game_strs = self.text.game_strs
 
 		self.pre_miss_info_addrs = (c_uint16_le * 0x19).from_buffer(rom, leca(0xa08d))
 		self.miss_dlg_addrs = (c_uint16_le * 0x19).from_buffer(rom, leca(0xa0f1))

@@ -7,6 +7,12 @@
 """
 
 import numpy as np
+import PIL.Image
+import PIL.ImagePalette
+import time
+
+Image = PIL.Image
+ImagePalette = PIL.ImagePalette.ImagePalette
 
 from common import *
 
@@ -45,7 +51,7 @@ def make_cmp_tables(texts):
 
 	return
 
-def run(rom):
+def run(rom, data):
 	"""y = np.repeat(np.arange(0, 0x100, dtype = np.uint).reshape((-1, 1)), 0x400, 1)
 	x = np.repeat(np.arange(0, 0x400, dtype = np.uint).reshape((1, -1)), 0x100, 0)
 

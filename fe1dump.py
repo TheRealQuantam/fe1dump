@@ -122,12 +122,27 @@ if __name__ == "__main__":
 
 	data = FireEmblem1Data(rom)
 
+	for hdr_str, strs in (
+		("\nUnit Names:", data.unit_names),
+		("\nCharacter Names:", data.char_names),
+		("\nEnemy Names:", data.enemy_names),
+		("\nMission Names:", data.miss_names),
+		("\nGame Strings:", data.game_strs),
+	):
+		print(hdr_str)
+		for idx, s in enumerate(strs):
+			print(f"{idx:2x}: {data.translate_text(s)}")
+
+	print()
+
 	pal_array = data.get_nes_palette_array(0)
 	remap_pal = data.get_remap_palette_array(pal_array, True)
 	palette = ImagePalette("RGB", bytes(pal_array))
 
 	make_webp = False
 	a = 0
+
+	experiments.run(rom, data)
 
 	leca = data.miss_info_leca
 	bank_set = data.pre_miss_script_bank_set
@@ -212,7 +227,6 @@ if __name__ == "__main__":
 		print("".join(parts))
 
 	#experiments.make_cmp_tables(all_texts.values())
-	experiments.run(rom)
 
 	mp = np.arange(0, 256, 1, np.uint8).reshape((16, 16))
 	frames, frame_times = GetAnimatedMapFrames(data, mp, True)
