@@ -19,6 +19,11 @@ _nes_pal_str = """ 84  84  84    0  30 116    8  16 144   48   0 136   68   0 10
 236 238 236  168 204 236  188 188 236  212 178 236  236 174 236  236 174 212  236 180 176  228 196 144  204 210 120  180 222 120  168 226 144  152 226 180  160 214 228  160 162 160    0   0   0    0   0   0"""
 nes_pal = np.array(list(map(int, re.split(r"\s+", _nes_pal_str.strip()))), np.uint8).reshape(-1, 3)
 
+num_terrains = 0x16
+num_terrain_names = 0x10
+num_metatiles = 0xd0
+num_units = 0x16
+
 class PacketHeader(LittleEndianStructure):
 	_pack_ = True
 	_fields_ = (
@@ -64,10 +69,44 @@ class SpriteFacing(IntEnum):
 	Left = 3
 
 Metasprite = namedtuple("Metasprite", ("tile_attribs", "tile_idcs"))
+class MetaspriteType2Sprite(Structure):
+	_pack_ = True
+	_fields_ = (
+		("y", c_int8),
+		("tile_idx", c_uint8),
+		("attribs", c_uint8),
+		("x", c_int8),
+	)
+
 MetaspriteFrameIndices = (c_uint8 * 2) * 4
 UnitSpriteInfo = namedtuple("UnitSpriteInfo", ("bank_idx", "tbl_idx", "sprite_tbl", "chr_bank_idx", "frame_idcs", "right_facing_is_flipped"))
 
 Portrait = namedtuple("Portrait", ("bank_idx", "pal_idx", "sprite_idx", "frame_sprite_idcs", "frame_times"))
+
+class TerrainTypes(IntEnum):
+	Plain = 0
+	UnusedFloor = 1
+	Town1 = 2
+	Fort = 3
+	Castle = 4
+	Forest = 5
+	Desert = 6
+	River = 7
+	MountainHill = 8
+	MountainPeak = 9
+	Bridge = 0xa
+	Ocean = 0xb
+	Floor = 0xc
+	Sky = 0xd
+	InvalidNpc = 0xe
+	Town2 = 0xf
+	Pillar = 0x10
+	Stairs = 0x11
+	TreasureChest = 0x12
+	Town3 = 0x13
+	Town4 = 0x14
+	Wall = 0x15
+	InvalidPc = 0x1f
 
 class MapHeader(LittleEndianStructure):
 	_pack_ = True
@@ -179,6 +218,8 @@ class FireEmblem1Data:
 		self.tile_banks = (TileBank * num_chr_banks).from_buffer(rom, chr_start_offs)
 		self.tile_banks_data = np.frombuffer(rom, np.uint8, sizeof(self.tile_banks), chr_start_offs).reshape((num_chr_banks, 256, 2, 8))
 
+		self._load_terrain_data()
+
 		self._map_rom_banks = (6, 15)
 		self._map_leca = get_leca4(self._map_rom_banks)
 		self._load_map_gfx()		
@@ -190,6 +231,30 @@ class FireEmblem1Data:
 		self._load_port_infos()
 
 		self._load_text()
+
+		return
+
+	def _load_terrain_data(self):
+		rom = self._rom
+		leca = self.terrain_img_leca = get_leca4((5, 15))
+
+		self.pc_metatile_terrain_types = (c_uint8 * num_metatiles).from_buffer(rom, leca(0xe828))
+		self.npc_metatile_terrain_types = (c_uint8 * num_metatiles).from_buffer(rom, leca(0xe8f8))
+		self.terrain_dodge_chances = (c_uint8 * num_terrains).from_buffer(rom, leca(0xebd8))
+		self.terrain_name_idcs = (c_uint8 * num_terrains).from_buffer(rom, leca(0xebee))
+
+		self.unit_terrain_cost_addrs = (c_uint16_le * 0x16).from_buffer(rom, leca(0xe9c8))
+		self.unit_terrain_costs = [
+			(c_uint8 * num_terrains).from_buffer(rom, leca(addr)) 
+			for addr in self.unit_terrain_cost_addrs
+		]
+
+		self.terrain_img_metasprite_list_addr = c_uint16_le.from_buffer(rom, leca(0xbfd0)).value
+		self.terrain_img_metasprite_addrs = (c_uint16_le * num_terrain_names).from_buffer(rom, leca(self.terrain_img_metasprite_list_addr))
+		self.terrain_img_metasprites = [
+			self._load_metasprite_type2(leca(addr))
+			for addr in self.terrain_img_metasprite_addrs
+		]
 
 		return
 
@@ -206,9 +271,9 @@ class FireEmblem1Data:
 			self.pal_packs.append(Packet(rom, leca(pack_addr)))
 
 		metatile_offs = leca(0x8000)
-		self.metatiles = (Metatile * 256).from_buffer(rom, metatile_offs)
-		self.metatile_arrays = np.frombuffer(rom, np.uint8, sizeof(self.metatiles), metatile_offs).reshape((256, 2, 2))
-		self.metatile_attribs = np.frombuffer(rom, np.uint8, 256, leca(0xf1bf))
+		self.metatiles = (Metatile * 256).from_buffer(rom, metatile_offs) # Not clear if 0xd0 or 256
+		self.metatile_arrays = np.frombuffer(rom, np.uint8, sizeof(self.metatiles), metatile_offs).reshape((-1, 2, 2))
+		self.metatile_attribs = np.frombuffer(rom, np.uint8, len(self.metatiles), leca(0xf1bf))
 
 		anim_frame_banks = (c_uint8 * 4).from_buffer(rom, leca(0xc1e4))
 		anim_frame_lengths = (c_uint8 * 4).from_buffer(rom, leca(0xc1e8))
@@ -386,6 +451,7 @@ class FireEmblem1Data:
 		self.get_script_addrs = self.text.get_script_addrs
 		self.translate_text = self.text.translate_text
 
+		self.terrain_names = self.text.terrain_names
 		self.unit_names = self.text.unit_names
 		self.char_names = self.text.char_names
 		self.enemy_names = self.text.enemy_names
@@ -411,6 +477,12 @@ class FireEmblem1Data:
 		tile_idcs = (c_uint8 * num_tiles).from_buffer(rom, sprite_offs + 2)
 
 		return Metasprite(tile_attribs, tile_idcs)
+
+	def _load_metasprite_type2(self, metasprite_offs):
+		rom = self._rom
+
+		num_parts = rom[metasprite_offs]
+		return (MetaspriteType2Sprite * num_parts).from_buffer(rom, metasprite_offs + 1)
 
 	def get_pre_miss_info(self, miss_idx):
 		return PreMissionInfo.from_buffer(self._rom, self.miss_info_leca(self.pre_miss_info_addrs[miss_idx - 1]))
@@ -467,7 +539,7 @@ class FireEmblem1Data:
 		return np.asarray([pal_map[tuple(pal) if is_rgb else pal] for pal in palette], np.uint8)
 
 	def get_map_tilemap(self, _map):
-		mtile_map = self.metatile_arrays.reshape((256, 2, 2))
+		mtile_map = self.metatile_arrays
 		tile_map = mtile_map[_map].transpose(0, 2, 1, 3).reshape((_map.shape[0] * 2, -1))
 		attrib_map = self.metatile_attribs[_map]
 
@@ -525,6 +597,29 @@ class FireEmblem1Data:
 			
 			tile = chr_bank[tile_idx] + (sprite_attribs & 3) * 4
 			flip_axes = flip_axes_lists[sprite_attribs >> 6]
+			if flip_axes:
+				tile = np.flip(tile, flip_axes)
+
+			tgt = bitmap[tile_y:tile_y+8, tile_x:tile_x+8]
+			ma.choose(tile.mask, (tile, tgt), out = tgt)
+
+	def draw_sprite_type2(self, bitmap, chr_bank, metasprite, x = 0, y = 0, *, pal_idx = None, hflipped = False, pre_set_bits = 0, clear_bits = 0, post_set_bits = 0):
+		flip_axes_lists = (tuple(), (1,), (0,), (0, 1))
+		hflip_flag = 0x40 if hflipped else 0
+		
+		if pal_idx is not None:
+			post_set_bits |= pal_idx
+			clear_bits |= 3
+
+		set_bits = post_set_bits | (pre_set_bits & ~clear_bits)
+
+		for part in metasprite:
+			tile_y = y + part.y
+			tile_x = x + (8 - part.x if hflipped else part.x)
+			attribs = ((part.attribs & ~clear_bits) | set_bits) ^ hflip_flag
+
+			tile = chr_bank[part.tile_idx] + (attribs & 3) * 4
+			flip_axes = flip_axes_lists[attribs >> 6]
 			if flip_axes:
 				tile = np.flip(tile, flip_axes)
 

@@ -64,6 +64,15 @@ def DrawMapStartLocations(frames, start_locs, font, color, outline_color):
 			drawtext(fill = color)
 
 if __name__ == "__main__":
+	rom = bytearray(Path(sys.argv[1]).read_bytes())
+	out_path = Path("out")
+	out_path.mkdir(exist_ok = True)
+
+	data = FireEmblem1Data(rom)
+
+	make_webp = False
+	font = PIL.ImageFont.truetype("arialbd.ttf", 11)
+
 	def format_fn(stem, ext = None, number = None, is_anim = False):
 		anim_str = " anim" if is_anim else ""
 		num_str = f" {number}" if number is not None else ""
@@ -85,7 +94,7 @@ if __name__ == "__main__":
 			append_images = frames[1:],
 			duration = frame_times,
 			loop = 0,
-			disposal = 2,
+			disposal = 2 if trans_idx >= 0 else 0,
 			)
 
 	def SaveAnimWebp(name, number, frames, frame_times):
@@ -116,13 +125,195 @@ if __name__ == "__main__":
 		if make_webp:
 			SaveAnimWebp(name, number, frames, frame_times)
 
-	rom = bytearray(Path(sys.argv[1]).read_bytes())
-	out_path = Path("out")
-	out_path.mkdir(exist_ok = True)
+	def save_images(name, number, img):
+		path = format_fn(Path(name), None, number)
+		img.save(path.with_suffix(".gif"))
+		if make_webp:
+			img.save(
+				path.with_suffix(".webp"), 
+				lossless = True,
+				quality = 100, 
+				method = 6,
+			)
 
-	data = FireEmblem1Data(rom)
+	def dump_metatiles(palette, text_color):
+		# Create metatiles image
+		mp = np.arange(0, num_metatiles, 1, np.uint8).reshape((-1, 16))
+		frames, frame_times = GetAnimatedMapFrames(data, mp, True)
+		SaveAnimImages(out_path.joinpath("metatiles"), None, frames, frame_times)
+
+		# Create metatile to terrain type map image
+		ttype_row = 1
+		ttype_col = 1
+		mtile_col = 2
+		tmap = np.zeros((mp.shape[0] + ttype_row, mp.shape[1] * 2 + ttype_col), dtype = np.uint8)
+		tmap[ttype_row:, mtile_col::2] = mp
+
+		xidx_y = 8
+		xidx_xs = [32 * x + 32 for x in range(16)]
+		yidx_y = 24
+		yidx_x = 8
+		ttype_y = ttype_row * 16 + 8
+		ttype_xs = [ttype_col * 16 + 8 + x * 32 for x in range(16)]
+		mtile_terrains = data.pc_metatile_terrain_types
+		frames, frame_times = GetAnimatedMapFrames(data, tmap, True)
+		unique_frames = {id(frame): frame for frame in frames}
+		for frame in unique_frames.values():
+			draw = PIL.ImageDraw.Draw(frame)
+			drawtext = functools.partial(
+				draw.text,
+				fill = text_color,
+				font = font,
+				anchor = "mm",
+			)
+
+			for i in range(16):
+				drawtext((xidx_xs[i], xidx_y), f"{i:x}")
+
+			for row in range(mp.shape[0]):
+				drawtext((yidx_x, row * 16 + yidx_y), f"{row:x}")
+
+				for col in range(16):
+					ttype = mtile_terrains[row * 16 + col]
+					drawtext((ttype_xs[col], 16 * row + ttype_y), f"{ttype:x}")
+
+		SaveAnimImages(out_path.joinpath("metatile terrains"), None, frames, frame_times)
+
+		return
+	
+	def dump_terrains(map_pal, text_color):
+		chr_bank = data.get_chr_bank_array(0x16)
+		pal_array = data.get_palette_array(1, True)
+		port_pal = ImagePalette("rgb", bytes(nes_pal[pal_array]))
+
+		# Print terrain names and numbers
+		for idx in range(num_terrains):
+			dodge_chance = data.terrain_dodge_chances[idx]
+			name_idx = data.terrain_name_idcs[idx]
+			name = data.translate_text(data.terrain_names[name_idx])
+			print(f'{idx:2x} {TerrainTypes(idx)._name_}: Name index {name_idx:x} "{name}", {dodge_chance}% to dodge')
+
+		# Create terrain portrait images
+		for idx, sprite in enumerate(data.terrain_img_metasprites):
+			bitmap = np.zeros((32, 32), dtype = np.uint8)
+			data.draw_sprite_type2(bitmap, chr_bank, sprite, -8, -8)
+
+			img = Image.fromarray(bitmap, "P")
+			img.putpalette(port_pal)
+
+			save_images(out_path.joinpath("terrain portrait"), idx, img)
+			save_images(
+				out_path.joinpath("terrain portrait big"), 
+				idx, 
+				img.resize((bitmap.shape[1] * 8, bitmap.shape[0] * 8)),
+			)
+
+		# Create terrain metatiles image
+		key = lambda x: x[1]
+		terrain_mtiles = colls.defaultdict(list)
+		mtile_it = filter(
+			lambda x: np.any(data.metatile_arrays[x[0]]), 
+			enumerate(data.pc_metatile_terrain_types),
+		)
+		for key, values in itertools.groupby(
+			sorted(mtile_it, key = key),
+			key = key,
+		):
+			terrain_mtiles[key] = [value[0] for value in values]
+
+		terrain_mtiles[0xe] = terrain_mtiles[0x1f] = []
+
+		mtile_idx_col = 7
+		mtile_img_col = 8
+		max_mtiles = max((len(terrain_mtiles[x]) for x in range(num_terrains)))
+		tmap = np.zeros((num_terrains, max_mtiles * 2 + mtile_idx_col), dtype = np.uint8)
+		for tidx in range(num_terrains):
+			mtiles = terrain_mtiles[tidx]
+			if mtiles:
+				tmap[tidx, mtile_img_col::2][:len(mtiles)] = mtiles
+
+		mtile_idx_x = mtile_idx_col * 16 + 8
+		mtile_img_x = mtile_img_col * 16 + 8
+		tidx_x = 8
+		tname_x = 16
+		terrain_dodge_x = 96
+		frames, frame_times = GetAnimatedMapFrames(data, tmap, True)
+		unique_frames = {id(frame): frame for frame in frames}
+		for frame in unique_frames.values():
+			draw = PIL.ImageDraw.Draw(frame)
+			drawtext = functools.partial(
+				draw.text,
+				fill = text_color,
+				font = font,
+				anchor = "mm",
+			)
+
+			for tidx in range(num_terrains):
+				y = 16 * tidx + 8
+				dodge_chance = data.terrain_dodge_chances[tidx]
+				dodge_str = f"{dodge_chance}%" if dodge_chance else ""
+				drawtext((tidx_x, y), f"{tidx:x}")
+				drawtext((terrain_dodge_x, y), dodge_str)
+				drawtext(
+					(tname_x, y),
+					" " + data.translate_text(data.terrain_names[data.terrain_name_idcs[tidx]]),
+					anchor = "lm",
+				)
+
+				for col, mtile_idx in enumerate(terrain_mtiles[tidx]):
+					drawtext((32 * col + mtile_idx_x, y), f"{mtile_idx:x}")
+
+		SaveAnimImages(out_path.joinpath("terrain metatiles"), None, frames, frame_times)
+
+		# Create terrain cost image
+		uidx_row = 0
+		uimg_row = uidx_row + 1
+		tbl_row = uimg_row + 1
+		tidx_col = 0
+		mtile_col = tidx_col + 1
+		tname_col = mtile_col + 1
+		tbl_col = tname_col + 4
+		terrain_mtiles = [0x30, 0, 0xa5, 0x4a, 0x4b, 0x31, 0x33, 0x50, 0x38, 0x5b, 0x39, 0x60, 0xa0, 0x6a, 0, 0x49, 0xb2, 0xa1, 0xab, 0xa9, 0xa6, 0x3b]
+		mp = np.zeros((tbl_row + num_terrains, num_units + tbl_col), dtype = np.uint8)
+		mp[uimg_row, tbl_col:] = np.arange(3, num_units * 2 + 3, 2, dtype = np.uint8)
+		mp[tbl_row:, mtile_col] = terrain_mtiles
+
+		uidx_y, uimg_y, tbl_y, tidx_x, mtile_x, tbl_x = (col * 16 + 8 for col in (uidx_row, uimg_row, tbl_row, tidx_col, mtile_col, tbl_col))
+		tname_x = tname_col * 16
+		frames, frame_times = GetAnimatedMapFrames(data, mp, True)
+		unique_frames = {id(frame): frame for frame in frames}
+		for frame in unique_frames.values():
+			draw = PIL.ImageDraw.Draw(frame)
+			drawtext = functools.partial(
+				draw.text,
+				fill = text_color,
+				font = font,
+				anchor = "mm",
+			)
+
+			for uidx in range(num_units):
+				drawtext((tbl_x + uidx * 16, uidx_y), f"{uidx:x}")
+
+			for tidx in range(num_terrains):
+				y = 16 * tidx + tbl_y
+				drawtext((tidx_x, y), f"{tidx:x}")
+				drawtext(
+					(tname_x, y),
+					" " + data.translate_text(data.terrain_names[data.terrain_name_idcs[tidx]]),
+					anchor = "lm",
+				)
+
+				for uidx in range(num_units):
+					cost = data.unit_terrain_costs[uidx][tidx]
+					if cost != 0xff:
+						drawtext((tbl_x + uidx * 16, y), str(cost))
+
+		SaveAnimImages(out_path.joinpath("terrain costs"), None, frames, frame_times)
+
+		return
 
 	for hdr_str, strs in (
+		("\nTerrain Names:", data.terrain_names),
 		("\nUnit Names:", data.unit_names),
 		("\nCharacter Names:", data.char_names),
 		("\nEnemy Names:", data.enemy_names),
@@ -138,9 +329,6 @@ if __name__ == "__main__":
 	pal_array = data.get_nes_palette_array(0)
 	remap_pal = data.get_remap_palette_array(pal_array, True)
 	palette = ImagePalette("RGB", bytes(pal_array))
-
-	make_webp = False
-	a = 0
 
 	experiments.run(rom, data)
 
@@ -228,11 +416,8 @@ if __name__ == "__main__":
 
 	#experiments.make_cmp_tables(all_texts.values())
 
-	mp = np.arange(0, 256, 1, np.uint8).reshape((16, 16))
-	frames, frame_times = GetAnimatedMapFrames(data, mp, True)
-	frames[0].save(out_path.joinpath("metatiles.png"))
-
-	SaveAnimImages(out_path.joinpath("metatiles"), None, frames, frame_times)
+	dump_metatiles(palette, 1)
+	dump_terrains(palette, 1)
 
 	sprite_pal = data.get_palette_array(0, True)
 	sprite_palette = ImagePalette("RGB", bytes(nes_pal[sprite_pal]))
@@ -309,8 +494,6 @@ if __name__ == "__main__":
 	
 		SaveAnimImages(out_path.joinpath("portrait"), port_idx, frames, frame_times)
 		SaveAnimImages(out_path.joinpath("portrait big"), port_idx, big_frames, frame_times)
-
-	font = PIL.ImageFont.truetype("arialbd.ttf", 11)
 
 	for map_idx in sorted(data.maps):
 		mp = data.get_map_array(map_idx)

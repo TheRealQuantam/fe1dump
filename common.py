@@ -78,7 +78,9 @@ class TextDataBase:
 		self, 
 		rom, 
 		chr_start_offs,
+		*args,
 		script_params = None,
+		terrain_name_params = None,
 		unit_name_params = None,
 		char_name_params = None,
 		enemy_name_params = None,
@@ -94,6 +96,7 @@ class TextDataBase:
 			(12, (0x5e,)),
 			(11, (0xb, 0x58)),  # There are 0x16 spots in the first table, but 0xb+ don't appear to point to valid data.
 			)
+		terrain_name_params = terrain_name_params or (0, 0xe5f1, 0x10)
 		unit_name_params = unit_name_params or (0, 0xda1f, 0x18)
 		char_name_params = char_name_params or (0, 0xde2b, 0x35)
 		enemy_name_params = enemy_name_params or (0, 0xdfa4, 0x45)
@@ -110,6 +113,7 @@ class TextDataBase:
 				tbl_offs = leca(set_addr)
 				bank_sets.append((c_uint16_le * set_lens[set_idx]).from_buffer(self._rom, tbl_offs))
 
+		self._terrain_name_addrs, self.terrain_names = self._load_strings(*terrain_name_params)
 		self._unit_name_addrs, self.unit_names = self._load_strings(*unit_name_params)
 		self._char_name_addrs, self.char_names = self._load_strings(*char_name_params)
 		self._enemy_name_addrs, self.enemy_names = self._load_strings(*enemy_name_params)
