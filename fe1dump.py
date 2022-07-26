@@ -64,6 +64,15 @@ def DrawMapStartLocations(frames, start_locs, font, color, outline_color):
 			drawtext(fill = color)
 
 if __name__ == "__main__":
+	rom = bytearray(Path(sys.argv[1]).read_bytes())
+	out_path = Path("out")
+	out_path.mkdir(exist_ok = True)
+
+	data = FireEmblem1Data(rom)
+
+	make_webp = False
+	a = 0
+
 	def format_fn(stem, ext = None, number = None, is_anim = False):
 		anim_str = " anim" if is_anim else ""
 		num_str = f" {number}" if number is not None else ""
@@ -116,13 +125,46 @@ if __name__ == "__main__":
 		if make_webp:
 			SaveAnimWebp(name, number, frames, frame_times)
 
-	rom = bytearray(Path(sys.argv[1]).read_bytes())
-	out_path = Path("out")
-	out_path.mkdir(exist_ok = True)
+	def save_images(name, number, img):
+		path = format_fn(Path(name), None, number)
+		img.save(path.with_suffix(".gif"))
+		if make_webp:
+			img.save(
+				path.with_suffix(".webp"), 
+				lossless = True,
+				quality = 100, 
+				method = 6,
+			)
 
-	data = FireEmblem1Data(rom)
+	def dump_terrains(map_pal):
+		chr_bank = data.get_chr_bank_array(0x16)
+		pal_array = data.get_palette_array(1, True)
+		port_pal = ImagePalette("rgb", bytes(nes_pal[pal_array]))
+
+		for idx in range(num_terrains):
+			dodge_chance = data.terrain_dodge_chances[idx]
+			name_idx = data.terrain_name_idcs[idx]
+			name = data.translate_text(data.terrain_names[name_idx])
+			print(f'{idx:2x} {TerrainTypes(idx)._name_}: Name index {name_idx:x} "{name}", {dodge_chance}% to dodge')
+
+		for idx, sprite in enumerate(data.terrain_img_metasprites):
+			bitmap = np.zeros((32, 32), dtype = np.uint8)
+			data.draw_sprite_type2(bitmap, chr_bank, sprite, -8, -8)
+
+			img = Image.fromarray(bitmap, "P")
+			img.putpalette(port_pal)
+
+			save_images(out_path.joinpath("terrain portrait"), idx, img)
+			save_images(
+				out_path.joinpath("terrain portrait big"), 
+				idx, 
+				img.resize((bitmap.shape[1] * 8, bitmap.shape[0] * 8)),
+			)
+
+		return
 
 	for hdr_str, strs in (
+		("\nTerrain Names:", data.terrain_names),
 		("\nUnit Names:", data.unit_names),
 		("\nCharacter Names:", data.char_names),
 		("\nEnemy Names:", data.enemy_names),
@@ -138,9 +180,6 @@ if __name__ == "__main__":
 	pal_array = data.get_nes_palette_array(0)
 	remap_pal = data.get_remap_palette_array(pal_array, True)
 	palette = ImagePalette("RGB", bytes(pal_array))
-
-	make_webp = False
-	a = 0
 
 	experiments.run(rom, data)
 
@@ -233,6 +272,8 @@ if __name__ == "__main__":
 	frames[0].save(out_path.joinpath("metatiles.png"))
 
 	SaveAnimImages(out_path.joinpath("metatiles"), None, frames, frame_times)
+
+	dump_terrains(palette)
 
 	sprite_pal = data.get_palette_array(0, True)
 	sprite_palette = ImagePalette("RGB", bytes(nes_pal[sprite_pal]))
