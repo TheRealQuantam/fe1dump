@@ -71,6 +71,7 @@ if __name__ == "__main__":
 	data = FireEmblem1Data(rom)
 
 	make_webp = False
+	font10 = font = PIL.ImageFont.truetype("arialbd.ttf", 10)
 	font = PIL.ImageFont.truetype("arialbd.ttf", 11)
 
 	def format_fn(stem, ext = None, number = None, is_anim = False):
@@ -94,7 +95,7 @@ if __name__ == "__main__":
 			append_images = frames[1:],
 			duration = frame_times,
 			loop = 0,
-			disposal = 2 if trans_idx >= 0 else 0,
+			disposal = 2,
 			)
 
 	def SaveAnimWebp(name, number, frames, frame_times):
@@ -143,18 +144,16 @@ if __name__ == "__main__":
 		SaveAnimImages(out_path.joinpath("metatiles"), None, frames, frame_times)
 
 		# Create metatile to terrain type map image
-		ttype_row = 1
-		ttype_col = 1
-		mtile_col = 2
-		tmap = np.zeros((mp.shape[0] + ttype_row, mp.shape[1] * 2 + ttype_col), dtype = np.uint8)
-		tmap[ttype_row:, mtile_col::2] = mp
+		ys = dict(zip("cidx tbl".split(), itertools.count(8, 16)))
+		xs = dict(zip(
+			"ridx tidx mimg cidx".split(), 
+			itertools.accumulate((8, 16, 16, -8)),
+		))
+		xoffs = [32 * x for x in range(16)]
+		tbl_row = ys["tbl"] // 16
+		tmap = np.zeros((mp.shape[0] + tbl_row, mp.shape[1] * 2 + xs["tidx"] // 16), dtype = np.uint8)
+		tmap[tbl_row:, xs["mimg"] // 16::2] = mp
 
-		xidx_y = 8
-		xidx_xs = [32 * x + 32 for x in range(16)]
-		yidx_y = 24
-		yidx_x = 8
-		ttype_y = ttype_row * 16 + 8
-		ttype_xs = [ttype_col * 16 + 8 + x * 32 for x in range(16)]
 		mtile_terrains = data.pc_metatile_terrain_types
 		frames, frame_times = GetAnimatedMapFrames(data, tmap, True)
 		unique_frames = {id(frame): frame for frame in frames}
@@ -168,14 +167,14 @@ if __name__ == "__main__":
 			)
 
 			for i in range(16):
-				drawtext((xidx_xs[i], xidx_y), f"{i:x}")
+				drawtext((xs["cidx"] + xoffs[i], ys["cidx"]), f"{i:x}")
 
 			for row in range(mp.shape[0]):
-				drawtext((yidx_x, row * 16 + yidx_y), f"{row:x}")
+				drawtext((xs["ridx"], row * 16 + ys["tbl"]), f"{row:x}")
 
 				for col in range(16):
 					ttype = mtile_terrains[row * 16 + col]
-					drawtext((ttype_xs[col], 16 * row + ttype_y), f"{ttype:x}")
+					drawtext((xs["tidx"] + xoffs[col], 16 * row + ys["tbl"]), f"{ttype:x}")
 
 		SaveAnimImages(out_path.joinpath("metatile terrains"), None, frames, frame_times)
 
@@ -223,20 +222,25 @@ if __name__ == "__main__":
 
 		terrain_mtiles[0xe] = terrain_mtiles[0x1f] = []
 
-		mtile_idx_col = 7
-		mtile_img_col = 8
-		max_mtiles = max((len(terrain_mtiles[x]) for x in range(num_terrains)))
-		tmap = np.zeros((num_terrains, max_mtiles * 2 + mtile_idx_col), dtype = np.uint8)
+		xs = dict(zip(
+			"tidx tname dodge midx mimg".split(),
+			itertools.accumulate((8, 8, 80, 24, 16)),
+		))
+		max_mtiles = 14
+		height = sum((max(1, (len(mtiles) + max_mtiles - 1) // max_mtiles) for mtiles in terrain_mtiles.values()))
+		tmap = np.zeros((height, max_mtiles * 2 + xs["midx"] // 16), dtype = np.uint8)
+
+		y = 0
 		for tidx in range(num_terrains):
 			mtiles = terrain_mtiles[tidx]
 			if mtiles:
-				tmap[tidx, mtile_img_col::2][:len(mtiles)] = mtiles
+				for i in range(0, len(mtiles), max_mtiles):
+					block = mtiles[i:i + max_mtiles]
+					tmap[y, xs["mimg"] // 16::2][:len(block)] = block
+					y += 1
+			else:
+				y += 1
 
-		mtile_idx_x = mtile_idx_col * 16 + 8
-		mtile_img_x = mtile_img_col * 16 + 8
-		tidx_x = 8
-		tname_x = 16
-		terrain_dodge_x = 96
 		frames, frame_times = GetAnimatedMapFrames(data, tmap, True)
 		unique_frames = {id(frame): frame for frame in frames}
 		for frame in unique_frames.values():
@@ -248,38 +252,44 @@ if __name__ == "__main__":
 				anchor = "mm",
 			)
 
+			y = 8
 			for tidx in range(num_terrains):
-				y = 16 * tidx + 8
 				dodge_chance = data.terrain_dodge_chances[tidx]
 				dodge_str = f"{dodge_chance}%" if dodge_chance else ""
-				drawtext((tidx_x, y), f"{tidx:x}")
-				drawtext((terrain_dodge_x, y), dodge_str)
+				drawtext((xs["tidx"], y), f"{tidx:x}")
+				drawtext((xs["dodge"], y), dodge_str)
 				drawtext(
-					(tname_x, y),
+					(xs["tname"], y),
 					" " + data.translate_text(data.terrain_names[data.terrain_name_idcs[tidx]]),
 					anchor = "lm",
 				)
 
-				for col, mtile_idx in enumerate(terrain_mtiles[tidx]):
-					drawtext((32 * col + mtile_idx_x, y), f"{mtile_idx:x}")
+				mtiles = terrain_mtiles[tidx]
+				if mtiles:
+					for i in range(0, len(mtiles), max_mtiles):
+						block = mtiles[i:i + max_mtiles]
+						for col, mtile_idx in enumerate(block):
+							drawtext((32 * col + xs["midx"], y), f"{mtile_idx:x}")
+							
+						y += 16
+				else:
+					y += 16
 
 		SaveAnimImages(out_path.joinpath("terrain metatiles"), None, frames, frame_times)
 
 		# Create terrain cost image
-		uidx_row = 0
-		uimg_row = uidx_row + 1
-		tbl_row = uimg_row + 1
-		tidx_col = 0
-		mtile_col = tidx_col + 1
-		tname_col = mtile_col + 1
-		tbl_col = tname_col + 4
+		ys = dict(zip("uidx uname uimg tbl".split(), itertools.count(8, 16)))
+		xs = dict(zip(
+			"tidx mtile tname tbl".split(),
+			itertools.accumulate((8, 16, 8, 72)),
+		))
+		tbl_row, tbl_col = (d["tbl"] // 16 for d in (ys, xs))
 		terrain_mtiles = [0x30, 0, 0xa5, 0x4a, 0x4b, 0x31, 0x33, 0x50, 0x38, 0x5b, 0x39, 0x60, 0xa0, 0x6a, 0, 0x49, 0xb2, 0xa1, 0xab, 0xa9, 0xa6, 0x3b]
-		mp = np.zeros((tbl_row + num_terrains, num_units + tbl_col), dtype = np.uint8)
-		mp[uimg_row, tbl_col:] = np.arange(3, num_units * 2 + 3, 2, dtype = np.uint8)
-		mp[tbl_row:, mtile_col] = terrain_mtiles
+		unit_names = "SK AK PK Pl DK Mr Ft Pr Th Hr Ar Hn Sh HM Sn Cm Mk Mg Cl Bi Lr Gn".split()
+		mp = np.zeros((tbl_row + num_terrains, tbl_col + num_units), dtype = np.uint8)
+		mp[ys["uimg"] // 16, tbl_col:] = np.arange(3, num_units * 2 + 3, 2, dtype = np.uint8)
+		mp[tbl_row:, xs["mtile"] // 16] = terrain_mtiles
 
-		uidx_y, uimg_y, tbl_y, tidx_x, mtile_x, tbl_x = (col * 16 + 8 for col in (uidx_row, uimg_row, tbl_row, tidx_col, mtile_col, tbl_col))
-		tname_x = tname_col * 16
 		frames, frame_times = GetAnimatedMapFrames(data, mp, True)
 		unique_frames = {id(frame): frame for frame in frames}
 		for frame in unique_frames.values():
@@ -292,13 +302,15 @@ if __name__ == "__main__":
 			)
 
 			for uidx in range(num_units):
-				drawtext((tbl_x + uidx * 16, uidx_y), f"{uidx:x}")
+				x = xs["tbl"] + uidx * 16
+				drawtext((x, ys["uidx"]), f"{uidx:x}")
+				drawtext((x, ys["uname"]), unit_names[uidx], font = font10)
 
 			for tidx in range(num_terrains):
-				y = 16 * tidx + tbl_y
-				drawtext((tidx_x, y), f"{tidx:x}")
+				y = 16 * tidx + ys["tbl"]
+				drawtext((xs["tidx"], y), f"{tidx:x}")
 				drawtext(
-					(tname_x, y),
+					(xs["tname"], y),
 					" " + data.translate_text(data.terrain_names[data.terrain_name_idcs[tidx]]),
 					anchor = "lm",
 				)
@@ -306,7 +318,7 @@ if __name__ == "__main__":
 				for uidx in range(num_units):
 					cost = data.unit_terrain_costs[uidx][tidx]
 					if cost != 0xff:
-						drawtext((tbl_x + uidx * 16, y), str(cost))
+						drawtext((xs["tbl"] + uidx * 16, y), str(cost))
 
 		SaveAnimImages(out_path.joinpath("terrain costs"), None, frames, frame_times)
 

@@ -350,12 +350,7 @@ class FireEmblem1Data:
 		):
 			for map_idx, list_addr in enumerate(addr_list):
 				offs = list_offs = leca(list_addr)
-			
-				num_objs = 0
-				while rom[offs] != 0:
-					offs += sizeof(obj_type)
-					num_objs += 1
-
+				num_objs = rom[offs::sizeof(obj_type)].index(0)
 				l = (obj_type * num_objs).from_buffer(rom, list_offs) if num_objs else []
 				obj_list[map_idx + 1] = l
 
