@@ -23,6 +23,7 @@ num_terrains = 0x16
 num_terrain_names = 0x10
 num_metatiles = 0xd0
 num_units = 0x16
+num_pcs = 0x35
 
 class PacketHeader(LittleEndianStructure):
 	_pack_ = True
@@ -107,6 +108,10 @@ class TerrainTypes(IntEnum):
 	Town4 = 0x14
 	Wall = 0x15
 	InvalidPc = 0x1f
+
+class CharGrowthChanceInfo(Structure):
+	_pack_ = True
+	_fields_ = [(name, c_uint8) for name in "strength skill wpn_lvl speed luck defense hp".split()]
 
 class MapHeader(LittleEndianStructure):
 	_pack_ = True
@@ -217,6 +222,13 @@ class FireEmblem1Data:
 		num_chr_banks = hdr.num_chr_8kbs * 2
 		self.tile_banks = (TileBank * num_chr_banks).from_buffer(rom, chr_start_offs)
 		self.tile_banks_data = np.frombuffer(rom, np.uint8, sizeof(self.tile_banks), chr_start_offs).reshape((num_chr_banks, 256, 2, 8))
+
+		leca = get_leca4((0, 15))
+		self.char_growth_info_addrs = (c_uint16_le * num_pcs).from_buffer(rom, leca(0xe1e0))
+		self.char_growth_infos = [
+			CharGrowthChanceInfo.from_buffer(rom, leca(addr)) 
+			for addr in self.char_growth_info_addrs
+		]
 
 		self._load_terrain_data()
 

@@ -137,6 +137,31 @@ if __name__ == "__main__":
 				method = 6,
 			)
 
+	def dump_growth_stats():
+		print("Player Character Stat Increase Chances:")
+
+		stat_names = "Str Skl Wpn Spd Lck Def HP".split()
+		stats = data.char_growth_infos
+		char_names = list(map(data.translate_text, data.char_names))
+		char_names[6] += "*" # Gordon is hard-coded with special behavior
+		name_len = max(map(len, char_names))
+
+		parts = [f"{name:>4}" for name in stat_names]
+		print(" " * (name_len + 4) + "".join(parts))
+
+		for idx, char_stats in enumerate(stats):
+			name = char_names[idx]
+			name += ":" + " " * (name_len - len(name))
+			char_stats = stats[idx]
+			parts = [
+				f"{x:4d}" 
+				for x in (c_uint8 * sizeof(char_stats)).from_buffer(char_stats)
+			]
+
+			print(f"{idx:2x} {name}" + "".join(parts))
+
+		print()
+
 	def dump_metatiles(palette, text_color):
 		# Create metatiles image
 		mp = np.arange(0, num_metatiles, 1, np.uint8).reshape((-1, 16))
@@ -327,7 +352,6 @@ if __name__ == "__main__":
 	for hdr_str, strs in (
 		("\nTerrain Names:", data.terrain_names),
 		("\nUnit Names:", data.unit_names),
-		("\nCharacter Names:", data.char_names),
 		("\nEnemy Names:", data.enemy_names),
 		("\nMission Names:", data.miss_names),
 		("\nGame Strings:", data.game_strs),
@@ -337,6 +361,8 @@ if __name__ == "__main__":
 			print(f"{idx:2x}: {data.translate_text(s)}")
 
 	print()
+
+	dump_growth_stats()
 
 	pal_array = data.get_nes_palette_array(0)
 	remap_pal = data.get_remap_palette_array(pal_array, True)
