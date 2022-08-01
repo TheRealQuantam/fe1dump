@@ -84,6 +84,7 @@ class TextDataBase:
 		unit_name_params = None,
 		char_name_params = None,
 		enemy_name_params = None,
+		item_name_params = None,
 		miss_name_params = None,
 		game_str_params = None,
 		):
@@ -100,6 +101,7 @@ class TextDataBase:
 		unit_name_params = unit_name_params or (0, 0xda1f, 0x18)
 		char_name_params = char_name_params or (0, 0xde2b, 0x35)
 		enemy_name_params = enemy_name_params or (0, 0xdfa4, 0x45)
+		item_name_params = item_name_params or (0, 0xdad5, 0x5c)
 		miss_name_params = miss_name_params  or (0, 0xee08, 0x19)
 		game_str_params = game_str_params or (11, 0x8fc2, 0x48)
 
@@ -117,6 +119,7 @@ class TextDataBase:
 		self._unit_name_addrs, self.unit_names = self._load_strings(*unit_name_params)
 		self._char_name_addrs, self.char_names = self._load_strings(*char_name_params)
 		self._enemy_name_addrs, self.enemy_names = self._load_strings(*enemy_name_params)
+		self._item_name_addrs, self.item_names = self._load_strings(*item_name_params)
 		self._miss_name_addrs, self.miss_names = self._load_strings(
 			*miss_name_params, 
 			(ScriptOps.EndOfLine,), 

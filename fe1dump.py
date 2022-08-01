@@ -353,6 +353,7 @@ if __name__ == "__main__":
 		("\nTerrain Names:", data.terrain_names),
 		("\nUnit Names:", data.unit_names),
 		("\nEnemy Names:", data.enemy_names),
+		("\nItem Names:", data.item_names),
 		("\nMission Names:", data.miss_names),
 		("\nGame Strings:", data.game_strs),
 	):

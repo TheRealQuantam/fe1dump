@@ -462,6 +462,7 @@ class FireEmblem1Data:
 		self.unit_names = self.text.unit_names
 		self.char_names = self.text.char_names
 		self.enemy_names = self.text.enemy_names
+		self.item_names = self.text.item_names
 		self.miss_names = self.text.miss_names
 		self.game_strs = self.text.game_strs
 
