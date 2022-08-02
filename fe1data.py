@@ -24,6 +24,8 @@ num_terrain_names = 0x10
 num_metatiles = 0xd0
 num_units = 0x16
 num_pcs = 0x35
+num_items = 0x5c
+num_maps = 0x19
 
 class PacketHeader(LittleEndianStructure):
 	_pack_ = True
@@ -242,6 +244,8 @@ class FireEmblem1Data:
 		self._load_port_gfx()
 		self._load_port_infos()
 
+		self._load_item_data()
+
 		self._load_text()
 
 		return
@@ -351,22 +355,12 @@ class FireEmblem1Data:
 		rom = self._rom
 		leca = self.map_obj_leca = get_leca4((8, 15))
 
-		self.map_npc_list_addrs = (c_uint16_le * 25).from_buffer(rom, leca(0x8aa3))
-		self.map_npc_lists = {}
-		self.map_pc_list_addrs = (c_uint16_le * 25).from_buffer(rom, leca(0x8490))
-		self.map_pc_lists = {}
-		
-		for addr_list, obj_list, obj_type in (
-			(self.map_npc_list_addrs, self.map_npc_lists, MapNpc),
-			(self.map_pc_list_addrs, self.map_pc_lists, MapPc),
-		):
-			for map_idx, list_addr in enumerate(addr_list):
-				offs = list_offs = leca(list_addr)
-				num_objs = rom[offs::sizeof(obj_type)].index(0)
-				l = (obj_type * num_objs).from_buffer(rom, list_offs) if num_objs else []
-				obj_list[map_idx + 1] = l
+		self.map_npc_list_addrs, self.map_npc_lists = load_term_dicts(
+			rom, leca, 0x8aa3, num_maps, ty = MapNpc, terms = 0, base_idx = 1)
+		self.map_pc_list_addrs, self.map_pc_lists = load_term_dicts(
+			rom, leca, 0x8490, num_maps, ty = MapPc, terms = 0, base_idx = 1)
 
-		self.map_start_loc_list_addrs = (c_uint16_le * 25).from_buffer(rom, leca(0x8790))
+		self.map_start_loc_list_addrs = (c_uint16_le * num_maps).from_buffer(rom, leca(0x8790))
 		self.map_start_loc_lists = {}
 		for map_idx, list_addr in enumerate(self.map_start_loc_list_addrs):
 			offs = leca(list_addr)
@@ -376,21 +370,10 @@ class FireEmblem1Data:
 			self.map_start_loc_lists[map_idx + 1] = l
 
 		leca = self.map_shop_leca = get_leca4((11, 15))
-		self.map_shop_list_addrs = (c_uint16_le * 25).from_buffer(rom, leca(0xa4ff))
-		self.map_shop_lists = {}
-		for map_idx, list_addr in enumerate(self.map_shop_list_addrs):
-			offs = leca(list_addr)
-			num_entries = rom[offs::sizeof(MapShop)].index(0xf0)
-			shops = (MapShop * num_entries).from_buffer(rom, offs) if num_entries else []
-			self.map_shop_lists[map_idx + 1] = shops
-
-		self.inv_list_addrs = (c_uint16_le * 20).from_buffer(rom, leca(0xa6c2))
-		self.inv_lists = []
-		for inv_idx, list_addr in enumerate(self.inv_list_addrs):
-			offs = leca(list_addr)
-			num_entries = rom[offs:].index(0xf0)
-			inv = (c_uint8 * num_entries).from_buffer(rom, offs) if num_entries else []
-			self.inv_lists.append(inv)
+		self.map_shop_list_addrs, self.map_shop_lists = load_term_dicts(
+			rom, leca, 0xa4ff, num_maps, ty = MapShop, terms = 0xf0)
+		self.inv_list_addrs, self.inv_lists = load_term_lists(
+			rom, leca, 0xa6c2, 20, terms = 0xf0)
 
 		return
 
@@ -414,24 +397,19 @@ class FireEmblem1Data:
 			tbl_sprites = [self._load_metasprite(leca, addr) for addr in addrs]
 			self.port_sprites.append(tbl_sprites)
 		
-		self.port_base_sprite_num = (c_uint8 * 0x4f).from_buffer(rom, leca(0x89c5))
-		self.port_frame_sprite_list_addrs = (c_uint16_le * 0x4f).from_buffer(rom, leca(0x8795))
-		self.port_frame_times_list_addrs = (c_uint16_le * 0x4f).from_buffer(rom, leca(0x88e2))
-
 	def _load_port_infos(self):
 		rom = self._rom
 		leca = self.port_leca
 
+		self.port_base_sprite_num = (c_uint8 * 0x4f).from_buffer(rom, leca(0x89c5))
+		self.port_frame_sprite_list_addrs = (c_uint16_le * 0x4f).from_buffer(rom, leca(0x8795))
+		self.port_frame_times_list_addrs, times_lists = load_term_lists(
+			rom, leca, 0x88e2, 0x4f, terms = 0xf0)
 		self.port_infos = []
-		for port_idx in range(len(self.port_base_sprite_num)):
+		for port_idx, times_list in enumerate(times_lists):
 			sprite_list_addr = self.port_frame_sprite_list_addrs[port_idx]
-			times_list_addr = self.port_frame_times_list_addrs[port_idx]
 			sprite_list_offs = leca(sprite_list_addr)
-			times_list_offs = leca(times_list_addr)
-			num_frames = rom[times_list_offs:].index(0xf0)
-
-			sprite_list = (c_uint8 * num_frames).from_buffer(rom, sprite_list_offs)
-			times_list = (c_uint8 * num_frames).from_buffer(rom, times_list_offs)
+			sprite_list = (c_uint8 * len(times_list)).from_buffer(rom, sprite_list_offs)
 
 			self.port_infos.append(Portrait(
 				self.port_chr_bank_idcs[port_idx],
@@ -443,6 +421,32 @@ class FireEmblem1Data:
 
 		return
 	
+	def _load_item_data(self):
+		rom = self._rom
+		leca = self.item_info_leca = get_leca4((6, 15))
+		load_byte_tbl = lambda x: (c_uint8 * num_items).from_buffer(rom, leca(x))
+		load_byte_lists = lambda addr, num_entries, terms: load_term_lists(rom, leca, addr, num_entries, terms = terms, end_offs = self._chr_start_offs)
+
+		self.item_mights = load_byte_tbl(0xd657)
+		self.item_reqs = load_byte_tbl(0xd6b3)
+		self.item_weights = load_byte_tbl(0xd70f)
+		self.item_hit_chances = load_byte_tbl(0xd76b)
+		self.item_crit_chances = load_byte_tbl(0xd7c7)
+		self.item_prices = load_byte_tbl(0xd823)
+		self.item_uses = load_byte_tbl(0xd87f)
+		self.item_unknown = load_byte_tbl(0xd967)
+		self.item_flags = load_byte_tbl(0xd9c3)
+
+		self.item_class_equip_idcs = load_byte_tbl(0xfe58)
+		self.item_class_equip_tbl_addrs, self.item_class_equip_tbls = load_byte_lists(0xa3d4, 12, 0xef)
+		self.item_class_equip_none = 0xfe
+		self.item_class_equip_base = 0
+
+		self.item_strong_against_idcs = load_byte_tbl(0xd8db)
+		self.item_strong_against_tbl_addrs, self.item_strong_against_tbls = load_byte_lists(0xd937, 11, 0xff)
+		self.item_strong_against_none = 0
+		self.item_strong_against_base = 1
+
 	def _load_text(self):
 		rom = self._rom
 		leca = self.miss_info_leca = get_leca4((3, 15))

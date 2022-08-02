@@ -13,8 +13,8 @@ _char_set = {}
 for _base_idx, _chars in (
 	(0, "ABCDEFGHIJKLMNO"),
 	(0x10, "QRSTUVWXYZabcdefghijklmnopqrstuvwxyz!?.,-'"), # This ' is left-aligned
-	(0x3a, ("<bow>", "<ring>", "<shield>", "C", "<key>", "<low-->", "<tr-N>", "<tr-G>", "<tr-P>")),
-	(0x44, ("…", "<sword>", "<spear>", "<crossbow>", "<axe>", "<staff>", "<orb1>", "<book>")),
+	(0x3a, ("<bolt>", "<ring>", "<shield>", "C", "<key>", "<low-->", "<tr-N>", "<tr-G>", "<tr-P>")),
+	(0x44, ("…", "<sword>", "<spear>", "<bow>", "<axe>", "<staff>", "<orb1>", "<book>")),
 	(0x4c, "“”"),
 	(0x4e, ("ll", "<center-'>")), # This ' is centered
 	(0x50, "Pf…"),

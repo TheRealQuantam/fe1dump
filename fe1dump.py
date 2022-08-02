@@ -23,6 +23,9 @@ import experiments
 Image = PIL.Image
 ImagePalette = PIL.ImagePalette.ImagePalette
 
+unit_abbrevs = "SK AK PK Pl DK Mr Ft Pr Th Hr Ar Hn Sh HM Sn Cm Mk Mg Cl Bi Ld Gn".split()
+ext_unit_abbrevs = unit_abbrevs + "Dr ED".split()
+
 def GetAnimatedMapFrames(data, map_idx, idx_is_data = False):
 	pal_array = data.get_nes_palette_array(0)
 	palette = ImagePalette("RGB", bytes(pal_array))
@@ -310,7 +313,6 @@ if __name__ == "__main__":
 		))
 		tbl_row, tbl_col = (d["tbl"] // 16 for d in (ys, xs))
 		terrain_mtiles = [0x30, 0, 0xa5, 0x4a, 0x4b, 0x31, 0x33, 0x50, 0x38, 0x5b, 0x39, 0x60, 0xa0, 0x6a, 0, 0x49, 0xb2, 0xa1, 0xab, 0xa9, 0xa6, 0x3b]
-		unit_names = "SK AK PK Pl DK Mr Ft Pr Th Hr Ar Hn Sh HM Sn Cm Mk Mg Cl Bi Lr Gn".split()
 		mp = np.zeros((tbl_row + num_terrains, tbl_col + num_units), dtype = np.uint8)
 		mp[ys["uimg"] // 16, tbl_col:] = np.arange(3, num_units * 2 + 3, 2, dtype = np.uint8)
 		mp[tbl_row:, xs["mtile"] // 16] = terrain_mtiles
@@ -329,7 +331,7 @@ if __name__ == "__main__":
 			for uidx in range(num_units):
 				x = xs["tbl"] + uidx * 16
 				drawtext((x, ys["uidx"]), f"{uidx:x}")
-				drawtext((x, ys["uname"]), unit_names[uidx], font = font10)
+				drawtext((x, ys["uname"]), unit_abbrevs[uidx], font = font10)
 
 			for tidx in range(num_terrains):
 				y = 16 * tidx + ys["tbl"]
@@ -349,11 +351,95 @@ if __name__ == "__main__":
 
 		return
 
+	def dump_items():
+		tbl_infos = (
+			("Mgt", data.item_mights, 3),
+			("CsI", data.item_class_equip_idcs, 3, lambda x: (f"{x:3x}" if x != data.item_class_equip_none else "  -")),
+			("SAI", data.item_strong_against_idcs, 3, lambda x: (f"{x:3x}" if x != data.item_strong_against_none else "  -")),
+			("Wgt", data.item_weights, 3),
+			("Hit", data.item_hit_chances, 3),
+			("Crt", data.item_crit_chances, 3),
+			("Use", data.item_uses, 3),
+			("Prc", data.item_prices, 3),
+			("Unk", data.item_unknown, 3, lambda x: (f"{x:3x}" if x else "  -")),
+			("Flg", data.item_flags, 8, "{0:8b}"),
+			("SRq", data.item_reqs, 8, lambda x: (data.translate_text(data.char_names[(x & 0x7f) - 1]) if x & 0x80 else f"{x or '-':>3}")),
+		)
+
+		val_names = []
+		vals = []
+		for info in tbl_infos:
+			name, tbl, width = info[:3]
+
+			if len(info) > 3:
+				fmt = info[3]
+				if isinstance(fmt, str):
+					fmt = fmt.format
+
+			else:
+				fmt_str = f"{{0:>{width}}}"
+				fmt = lambda x: fmt_str.format(x or "-")
+
+			val_names.append(name + " " * (width - len(name)))
+			vals.append(list(map(fmt, tbl)))
+
+		item_names = list(map(data.translate_text, data.item_names))
+		max_name = max(map(len, item_names))
+		padding = [" " * (max_name - len(name)) for name in item_names]
+
+		print("Item Data:")
+		print(" " * (max_name + 5) + " ".join(val_names))
+		for idx, item_vals in enumerate(zip(*vals)):
+			vals_str = " ".join(item_vals)
+			print(f"{idx:2x} {item_names[idx]}:{padding[idx]} {vals_str}")
+
+		print()
+
+		# Print equippability and strong against lists
+		bool_vals = ("-", "x")
+		for hdr_str, addrs, tbls, item_list, list_none in (
+			("Item Equippability Lists:", data.item_class_equip_tbl_addrs, data.item_class_equip_tbls, data.item_class_equip_idcs, data.item_class_equip_none),
+			("Item Strong Against Lists:", data.item_strong_against_tbl_addrs, data.item_strong_against_tbls, data.item_strong_against_idcs, data.item_strong_against_none),
+		):
+			item_vals = colls.defaultdict(set)
+			for idx, val in enumerate(item_list):
+				if val != list_none:
+					item_vals[val].add(idx)
+
+			print(hdr_str)
+			print(" " * 10 + " ".join(ext_unit_abbrevs))
+			for idx, tbl in enumerate(tbls):
+				addr = addrs[idx]
+				types = [False] * (len(ext_unit_abbrevs))
+				for unit_idx in tbl:
+					types[unit_idx - 1] = True
+
+				vals_str = " ".join((f"{bool_vals[x]:>2}" for x in types))
+
+				items = item_vals[idx]
+				item_name = ""
+				if len(items) <= 1:
+					item_name = item_names[next(iter(items))] if items else "-"
+
+				print(f"{idx:2x} @{addr:4x}: {vals_str} {item_name}")
+
+			print()
+
+		# Print shop inventory lists
+		print("Shop Inventory Lists:")
+		for idx, tbl in enumerate(data.inv_lists):
+			idcs_str = " ".join((f"{x:2x}" for x in tbl))
+			names_str = ", ".join((item_names[x - 1] for x in tbl))
+			print(f"{idx:2x}: {idcs_str}: {names_str}")
+
+		print()
+
+		return
+
 	for hdr_str, strs in (
 		("\nTerrain Names:", data.terrain_names),
 		("\nUnit Names:", data.unit_names),
 		("\nEnemy Names:", data.enemy_names),
-		("\nItem Names:", data.item_names),
 		("\nMission Names:", data.miss_names),
 		("\nGame Strings:", data.game_strs),
 	):
@@ -364,6 +450,7 @@ if __name__ == "__main__":
 	print()
 
 	dump_growth_stats()
+	dump_items()
 
 	pal_array = data.get_nes_palette_array(0)
 	remap_pal = data.get_remap_palette_array(pal_array, True)

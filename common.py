@@ -7,6 +7,7 @@
 """
 
 import collections as colls
+import collections.abc as cabc
 from ctypes import *
 from enum import Enum, IntEnum, IntFlag, auto
 import functools
@@ -73,6 +74,58 @@ def leca4(banks, addr):
 def get_leca4(banks):
 	return functools.partial(leca4, banks)
 
+def load_term_lists(
+	rom, 
+	leca, 
+	tbl_addr, 
+	num_entries, 
+	*, 
+	ty = c_uint8, 
+	terms = (0xef,), 
+	end_offs = None,
+	include_term = False,
+):
+	if not isinstance(terms, cabc.Sequence):
+		terms = (terms,)
+	tsize = sizeof(ty)
+	add_len = int(bool(include_term)) if tsize == 1 else 0
+
+	if len(terms) > 1:
+		# TODO: Replace with RE
+		def get_len(offs):
+			sl = rom[offs:end_offs:tsize]
+			lens = [sl.find(ch) for ch in terms]
+			return min(filter(lambda x: x >= 0, lens))
+	else:
+		term = terms[0]
+		get_len = lambda offs: rom[offs:end_offs:tsize].find(term)
+
+	addrs = (c_uint16_le * num_entries).from_buffer(rom, leca(tbl_addr))
+	lsts = []
+	for addr in addrs:
+		offs = leca(addr)
+		length = get_len(offs) + add_len
+		lsts.append((ty * length).from_buffer(rom, offs) if length else [])
+
+	return addrs, lsts
+
+def load_term_dicts(
+	rom, 
+	leca, 
+	tbl_addr, 
+	num_entries, 
+	*, 
+	ty = c_uint8, 
+	terms = (0xef,), 
+	end_offs = None,
+	include_term = False,
+	base_idx = 0,
+):
+	addrs, lsts = load_term_lists(rom, leca, tbl_addr, num_entries, ty = ty, terms = terms, end_offs = end_offs, include_term = include_term)
+	dicts = {idx + base_idx: val for idx, val in enumerate(lsts)}
+
+	return addrs, dicts
+
 class TextDataBase:
 	def __init__(
 		self, 
@@ -134,20 +187,17 @@ class TextDataBase:
 	def _load_strings(self, bank_idx, tbl_addr, num_entries, terms = (ScriptOps.EndScript,), include_term = None):
 		if include_term is None:
 			include_term = terms != (ScriptOps.EndScript,)
-		add_len = int(bool(include_term))
 
-		leca = get_leca4((bank_idx, 15))
-		addrs = (c_uint16_le * num_entries).from_buffer(self._rom, leca(tbl_addr))
-		strs = []
-		for addr in addrs:
-			offs = leca(addr)
-			# TODO: Replace with RE
-			lens = [self._rom.find(ch, offs, self._chr_start_offs) for ch in terms]
-			str_len = min(filter(lambda x: x >= 0, lens)) - offs
-			s = (c_uint8 * (str_len + add_len)).from_buffer(self._rom, offs)
-			strs.append(s)
-
-		return addrs, strs
+		return load_term_lists(
+			self._rom,
+			get_leca4((bank_idx, 15)),
+			tbl_addr,
+			num_entries,
+			ty = c_uint8,
+			terms = terms,
+			end_offs = self._chr_start_offs,
+			include_term = include_term,
+		)
 
 	def get_script_addrs(self):
 		return self._script_addrs
