@@ -140,11 +140,32 @@ if __name__ == "__main__":
 				method = 6,
 			)
 
+	def dump_unit_types():
+		print("Enemy Unit Type Base Stats:")
+
+		stat_names = "Str Skl Wpn Spd Lck Def Mov HP Exp".split()
+		unit_names = list(map(data.translate_text, data.unit_names))
+		name_len = max(map(len, unit_names))
+
+		parts = [f"{name:>4}" for name in stat_names]
+		print(" " * (name_len + 4) + "".join(parts))
+
+		for idx, char_stats in enumerate(data.unit_type_infos):
+			name = unit_names[idx]
+			name += ":" + " " * (name_len - len(name))
+			parts = [
+				f"{x:4d}" 
+				for x in (c_uint8 * sizeof(char_stats)).from_buffer(char_stats)
+			]
+
+			print(f"{idx:2x} {name}" + "".join(parts))
+
+		print()
+
 	def dump_growth_stats():
 		print("Player Character Stat Increase Chances:")
 
 		stat_names = "Str Skl Wpn Spd Lck Def HP".split()
-		stats = data.char_growth_infos
 		char_names = list(map(data.translate_text, data.char_names))
 		char_names[6] += "*" # Gordon is hard-coded with special behavior
 		name_len = max(map(len, char_names))
@@ -152,10 +173,9 @@ if __name__ == "__main__":
 		parts = [f"{name:>4}" for name in stat_names]
 		print(" " * (name_len + 4) + "".join(parts))
 
-		for idx, char_stats in enumerate(stats):
+		for idx, char_stats in enumerate(data.char_growth_infos):
 			name = char_names[idx]
 			name += ":" + " " * (name_len - len(name))
-			char_stats = stats[idx]
 			parts = [
 				f"{x:4d}" 
 				for x in (c_uint8 * sizeof(char_stats)).from_buffer(char_stats)
@@ -438,7 +458,6 @@ if __name__ == "__main__":
 
 	for hdr_str, strs in (
 		("\nTerrain Names:", data.terrain_names),
-		("\nUnit Names:", data.unit_names),
 		("\nEnemy Names:", data.enemy_names),
 		("\nMission Names:", data.miss_names),
 		("\nGame Strings:", data.game_strs),
@@ -449,6 +468,7 @@ if __name__ == "__main__":
 
 	print()
 
+	dump_unit_types()
 	dump_growth_stats()
 	dump_items()
 

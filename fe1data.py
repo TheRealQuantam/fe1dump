@@ -115,6 +115,10 @@ class CharGrowthChanceInfo(Structure):
 	_pack_ = True
 	_fields_ = [(name, c_uint8) for name in "strength skill wpn_lvl speed luck defense hp".split()]
 
+class EnemyUnitTypeInfo(Structure):
+	_pack_ = True
+	_fields_ = [(name, c_uint8) for name in "strength skill wpn_lvl speed luck defense movement hp xp".split()]
+
 class MapHeader(LittleEndianStructure):
 	_pack_ = True
 	_fields_ = (
@@ -225,13 +229,6 @@ class FireEmblem1Data:
 		self.tile_banks = (TileBank * num_chr_banks).from_buffer(rom, chr_start_offs)
 		self.tile_banks_data = np.frombuffer(rom, np.uint8, sizeof(self.tile_banks), chr_start_offs).reshape((num_chr_banks, 256, 2, 8))
 
-		leca = get_leca4((0, 15))
-		self.char_growth_info_addrs = (c_uint16_le * num_pcs).from_buffer(rom, leca(0xe1e0))
-		self.char_growth_infos = [
-			CharGrowthChanceInfo.from_buffer(rom, leca(addr)) 
-			for addr in self.char_growth_info_addrs
-		]
-
 		self._load_terrain_data()
 
 		self._map_rom_banks = (6, 15)
@@ -244,6 +241,7 @@ class FireEmblem1Data:
 		self._load_port_gfx()
 		self._load_port_infos()
 
+		self._load_unit_data()
 		self._load_item_data()
 
 		self._load_text()
@@ -421,6 +419,24 @@ class FireEmblem1Data:
 
 		return
 	
+	def _load_unit_data(self):
+		rom = self._rom
+		leca = get_leca4((0, 15))
+
+		self.unit_type_info_addrs = (c_uint16_le * num_units).from_buffer(rom, leca(0xec04))
+		self.unit_type_infos = [
+			EnemyUnitTypeInfo.from_buffer(rom, leca(addr))
+			for addr in self.unit_type_info_addrs
+		]
+
+		self.char_growth_info_addrs = (c_uint16_le * num_pcs).from_buffer(rom, leca(0xe1e0))
+		self.char_growth_infos = [
+			CharGrowthChanceInfo.from_buffer(rom, leca(addr)) 
+			for addr in self.char_growth_info_addrs
+		]
+
+		return
+
 	def _load_item_data(self):
 		rom = self._rom
 		leca = self.item_info_leca = get_leca4((6, 15))
