@@ -23,6 +23,10 @@ import experiments
 Image = PIL.Image
 ImagePalette = PIL.ImagePalette.ImagePalette
 
+dec_re = re.compile(r"(\d+)")
+fmt_esc_re = re.compile(r"([\{\}])")
+fmt_spec_re = re.compile(r"^ ( [^:]* ) : ( [^:]+ ) : ( [^:\.]* \d+ [^:]* ) $", re.X)
+
 unit_abbrevs = "SK AK PK Pl DK Mr Ft Pr Th Hr Ar Hn Sh HM Sn Cm Mk Mg Cl Bi Ld Gn".split()
 ext_unit_abbrevs = unit_abbrevs + "Dr ED".split()
 
@@ -146,6 +150,57 @@ if __name__ == "__main__":
 		zero_ord = ord("0")
 		flag_parts = [(flag_names[i] if ch == "1" else "-") for i, ch in enumerate(bit_str)]
 		return "".join(flag_parts)
+
+	def prepare_print_table(tbl_fmt, data_idx = -1, *, prefix = "", args = {}):
+		fmt_parts = []
+		val_names = []
+		num_args = []
+		for idx, info in enumerate(tbl_fmt):
+			if isinstance(info, str):
+				name, sym, fmt = fmt_spec_re.fullmatch(info).groups()
+			else:
+				name, sym, fmt = info
+
+			width = int(dec_re.search(fmt)[0])
+			match = dec_re.fullmatch(sym)
+			if match:
+				num_args.append(int(match[0]))
+
+			val_names.append(name + " " * (width - len(name)))
+			fmt_parts.append(f"{{{sym}:{fmt}}}")
+
+		if data_idx > 0:
+			idx = data_idx - 1
+			val_names[idx] += " "
+			fmt_parts[idx] += ":"
+
+		return {
+			"hdr": prefix + " ".join(val_names),
+			"fmt": (fmt_esc_re.sub(r"\1\1", prefix) + " ".join(fmt_parts)).format,
+			"num_num_args": max(num_args) + 1 if num_args else 0,
+			"args": args,
+		}
+
+		return (hdr, fmt)
+
+	def format_table(tbl_fmt, tbl):
+		hdr = tbl_fmt["hdr"]
+		fmt = tbl_fmt["fmt"]
+		num_num_args = tbl_fmt["num_num_args"]
+		args = tbl_fmt["args"]
+
+		if num_num_args:
+			return hdr, [fmt(*entry[1:], **args, e = entry[0], idx = idx) for idx, entry in enumerate(tbl)]
+		else:
+			return hdr, [fmt(**args, e = entry, idx = idx) for idx, entry in enumerate(tbl)]
+
+	def print_table(tbl_fmt, tbl):
+		hdr, lines = format_table(tbl_fmt, tbl)
+		print(hdr)
+		for line in lines:
+			print(line)
+
+		print()
 
 	def dump_unit_types():
 		print("Enemy Unit Type Base Stats:")
@@ -463,10 +518,201 @@ if __name__ == "__main__":
 
 		return
 
+	def dump_map_info():
+		unames = list(map(data.translate_text, data.unit_names))
+		uname_len = max(map(len, unames))
+		pc_names = {
+			idx + 1: data.translate_text(name) 
+			for idx, name in enumerate(data.char_names)
+		}
+		npc_names = {
+			idx + 1 | 0x80: data.translate_text(name) 
+			for idx, name in enumerate(data.enemy_names)
+		}
+		name_len = max(map(len, itertools.chain(pc_names.values(), npc_names.values())))
+		item_names = list(map(data.translate_text, data.item_names))
+		map_names = list(map(data.translate_text, data.miss_names))
+
+		unit_tbl_fmt = (
+			":idx:2x",
+			"ID:e.id:2x",
+			f"Name:0:{name_len}",
+			f"Type:1:{uname_len}",
+			"Lvl:e.level:3d",
+			"HP:e.max_hp:3d",
+			"XP:e.xp:3d",
+			"Str:e.strength:3d",
+			"Skl:e.skill:3d",
+			"WLv:e.wpn_lvl:3d",
+			"Spd:e.speed:3d",
+			"Lck:e.luck:3d",
+			"Def:e.defense:3d",
+			"Mov:e.movement:3d",
+			"Unk:e.unk_e:3d",
+			"Res:e.resistance:3d",
+			" x:e.x:2x",
+			" y:e.y:2x",
+			"St:e.state:2x",
+			"Items:2:20",
+		)
+		map_unit_fmt = prepare_print_table(unit_tbl_fmt, 1, prefix = "\t")
+
+		dlg_info_fmt = (
+			":idx:2x",
+			" x:e.x:2x",
+			" y:e.y:2x",
+			"Trg:e.unk_2:3x",
+			"Dlg:e.dialog_idx:3x",
+			"Unk4:e.unk_4:4x",
+		)
+		map_dlg_fmt = prepare_print_table(dlg_info_fmt, 1, prefix = "\t")
+
+		shop_info_fmt = (
+			":idx:2x",
+			" x:e.x:2x",
+			" y:e.y:2x",
+			"Type:0:10",
+			"Inv:e.inv_idx:3x",
+		)
+		map_shop_fmt = prepare_print_table(shop_info_fmt, 1, prefix = "\t")
+
+		print("Maps:")
+		for map_idx, map_info in data.maps.items():
+			hdr = map_info.hdr
+			print(f"Map {map_idx:x}: {map_names[map_idx - 1]}")
+			print(f"\tSize: {hdr.metatiles_wide + 1}x{hdr.metatiles_high + 1}")
+			print(f"\tInitial Position: {hdr.initial_scroll_metatile_x}, {hdr.initial_scroll_metatile_y}\n")
+
+			for title, char_names, objs, is_pc in (
+				("\tNew Player Units:", pc_names, data.map_pc_lists[map_idx], True),
+				("\tEnemy Units:", npc_names, list(map(data.get_unit_obj_for_map_npc, data.map_npc_lists[map_idx])), False),
+			):
+				if not objs:
+					continue
+
+				num_items = 4 if is_pc else 2
+				obj_items = []
+				for obj in objs:
+					parts = []
+
+					for item_idx in range(num_items):
+						item_num = obj.item_idcs[item_idx]
+						item_name = f"{item_names[item_num - 1]}" if item_num else "None"
+						parts.append(f"{item_idx}: {item_num} {item_name} ({obj.item_values[item_idx]})")
+
+					for idx in range(num_items, len(obj.item_values)):
+						value = obj.item_values[idx]
+						parts.append(f"{idx}: {value}")
+
+					obj_items.append(", ".join(parts))
+
+				print(title)
+				print_table(map_unit_fmt, (
+					(u, char_names[u.id], unames[u.type - 1], items) 
+					for u, items in zip(objs, obj_items)
+				))
+
+			dlg_infos = data.get_miss_dlg_info(map_idx)
+			if dlg_infos:
+				print("\tDialog Points:")
+				print_table(map_dlg_fmt, dlg_infos)
+
+			shop_infos = data.map_shop_lists[map_idx - 1]
+			if shop_infos:
+				print("\tShops:")
+				print_table(
+					map_shop_fmt, 
+					[(info, ShopType(info.type).name) for info in shop_infos],
+				)
+
+		return
+
+	def dump_scripts():
+		leca = data.miss_info_leca
+		bank_set = data.pre_miss_script_bank_set
+		pre_miss_infos = [data.get_pre_miss_info(idx + 1) for idx in range(len(data.pre_miss_info_addrs))]
+		pre_miss_scripts = {bank_set + (info.dialog_idx,): i + 1 for i, info in enumerate(pre_miss_infos)}
+
+		bank_set = data.miss_dlg_script_bank_set
+		miss_dlgs = []
+		miss_dlg_scripts = colls.defaultdict(set)
+		for map_idx in range(len(data.miss_dlg_addrs)):
+			infos = data.get_miss_dlg_info(map_idx + 1)
+			miss_dlgs.append(infos)
+
+			for i, info in enumerate(infos):
+				miss_dlg_scripts[bank_set + (info.dialog_idx,)].add((map_idx, i))
+
+		script_addrs = data.get_script_addrs()
+		op_suffixes = {
+			ScriptOps.RunScript: "\n", 
+			ScriptOps.RunScriptForOtherParticipant: "\n", 
+			ScriptOps.Interact: "\n", 
+			ScriptOps.EndOfLine: "\n", 
+			ScriptOps.PauseForInput: "\n\n", 
+			ScriptOps.EndScript: "\n",
+		}
+		next_scripts = {}
+		prev_scripts = colls.defaultdict(set)
+		scripts = colls.OrderedDict()
+		all_texts = {}
+
+		for bank_idx, bank_sets in script_addrs.items():
+			for set_idx, bank_set in enumerate(bank_sets):
+				for script_idx in range(len(bank_set)):
+					script_id = (bank_idx, set_idx, script_idx)
+
+					script_info = data.get_script(bank_idx, set_idx, script_idx)
+					script = bytes(script_info.script)
+					ops_offs = script_info.op_infos
+					scripts[script_id] = script_info
+					all_texts[script_addrs[bank_idx][set_idx][script_idx]] = (script, ops_offs)
+
+					op_offs = ops_offs[-1][0]
+					if script[op_offs] in (ScriptOps.RunScript, ScriptOps.RunScriptForOtherParticipant):
+						bank_set, next_idx = script[op_offs + 1:op_offs + 3]
+						new_id = (bank_set >> 4, bank_set & 0xf, next_idx)
+
+						next_scripts[script_id] = new_id
+						prev_scripts[new_id].add(script_id)
+
+		for script_id, script_info in scripts.items():
+			script = script_info.script
+
+			pre_miss = pre_miss_scripts.get(script_id)
+			pre_miss_str = f", pre: {pre_miss:x}" if pre_miss is not None else ""
+
+			miss_dlgs = miss_dlg_scripts.get(script_id)
+			miss_dlg_str = ""
+			if miss_dlgs:
+				miss_dlg_str = ", dialog: " + " ".join((f"({info[0]:x}, {info[1]:x})" for info in miss_dlgs))
+
+			parts = [f"{bidx:x}:{gidx:x}:{sidx:x}" for bidx, gidx, sidx in prev_scripts.get(script_id, ())]
+			prev_script_str = ""
+			if parts:
+				prev_script_str = ", prev: " + " ".join(parts)
+
+			id_str = ":".join((f"{idx:x}" for idx in script_id))
+			print(f"SCRIPT {id_str}{pre_miss_str}{miss_dlg_str}{prev_script_str}:")
+
+			parts = []
+			cur_offs = 0
+			for op_offs, op_len in script_info.op_infos:
+				if op_offs != cur_offs:
+					part = script[cur_offs:op_offs]
+					xlated = data.translate_text(part)
+					parts.append(xlated)
+
+				cur_offs = op_offs + op_len
+
+				suffix = op_suffixes.get(script[op_offs], "")
+				parts.append(f"<{script[op_offs:cur_offs].hex()}>{suffix}")
+
+			print("".join(parts))
+
 	for hdr_str, strs in (
 		("\nTerrain Names:", data.terrain_names),
 		("\nEnemy Names:", data.enemy_names),
-		("\nMission Names:", data.miss_names),
 		("\nGame Strings:", data.game_strs),
 	):
 		print(hdr_str)
@@ -478,6 +724,7 @@ if __name__ == "__main__":
 	dump_unit_types()
 	dump_growth_stats()
 	dump_items()
+	dump_map_info()
 
 	pal_array = data.get_nes_palette_array(0)
 	remap_pal = data.get_remap_palette_array(pal_array, True)
@@ -485,87 +732,7 @@ if __name__ == "__main__":
 
 	experiments.run(rom, data)
 
-	leca = data.miss_info_leca
-	bank_set = data.pre_miss_script_bank_set
-	pre_miss_infos = [data.get_pre_miss_info(idx + 1) for idx in range(len(data.pre_miss_info_addrs))]
-	pre_miss_scripts = {bank_set + (info.dialog_idx,): i + 1 for i, info in enumerate(pre_miss_infos)}
-
-	bank_set = data.miss_dlg_script_bank_set
-	miss_dlgs = []
-	miss_dlg_scripts = colls.defaultdict(set)
-	for map_idx in range(len(data.miss_dlg_addrs)):
-		infos = data.get_miss_dlg_info(map_idx + 1)
-		miss_dlgs.append(infos)
-
-		for i, info in enumerate(infos):
-			miss_dlg_scripts[bank_set + (info.dialog_idx,)].add((map_idx, i))
-
-	script_addrs = data.get_script_addrs()
-	op_suffixes = {
-		ScriptOps.RunScript: "\n", 
-		ScriptOps.RunScriptForOtherParticipant: "\n", 
-		ScriptOps.Interact: "\n", 
-		ScriptOps.EndOfLine: "\n", 
-		ScriptOps.PauseForInput: "\n\n", 
-		ScriptOps.EndScript: "\n",
-	}
-	next_scripts = {}
-	prev_scripts = colls.defaultdict(set)
-	scripts = colls.OrderedDict()
-	all_texts = {}
-
-	for bank_idx, bank_sets in script_addrs.items():
-		for set_idx, bank_set in enumerate(bank_sets):
-			for script_idx in range(len(bank_set)):
-				script_id = (bank_idx, set_idx, script_idx)
-
-				script_info = data.get_script(bank_idx, set_idx, script_idx)
-				script = bytes(script_info.script)
-				ops_offs = script_info.op_infos
-				scripts[script_id] = script_info
-				all_texts[script_addrs[bank_idx][set_idx][script_idx]] = (script, ops_offs)
-
-				op_offs = ops_offs[-1][0]
-				if script[op_offs] in (ScriptOps.RunScript, ScriptOps.RunScriptForOtherParticipant):
-					bank_set, next_idx = script[op_offs + 1:op_offs + 3]
-					new_id = (bank_set >> 4, bank_set & 0xf, next_idx)
-
-					next_scripts[script_id] = new_id
-					prev_scripts[new_id].add(script_id)
-
-	for script_id, script_info in scripts.items():
-		script = script_info.script
-
-		pre_miss = pre_miss_scripts.get(script_id)
-		pre_miss_str = f", pre: {pre_miss:x}" if pre_miss is not None else ""
-
-		miss_dlgs = miss_dlg_scripts.get(script_id)
-		miss_dlg_str = ""
-		if miss_dlgs:
-			miss_dlg_str = ", dialog: " + " ".join((f"({info[0]:x}, {info[1]:x})" for info in miss_dlgs))
-
-		parts = [f"{bidx:x}:{gidx:x}:{sidx:x}" for bidx, gidx, sidx in prev_scripts.get(script_id, ())]
-		prev_script_str = ""
-		if parts:
-			prev_script_str = ", prev: " + " ".join(parts)
-
-		id_str = ":".join((f"{idx:x}" for idx in script_id))
-		print(f"SCRIPT {id_str}{pre_miss_str}{miss_dlg_str}{prev_script_str}:")
-
-		parts = []
-		cur_offs = 0
-		for op_offs, op_len in script_info.op_infos:
-			if op_offs != cur_offs:
-				part = script[cur_offs:op_offs]
-				xlated = data.translate_text(part)
-				parts.append(xlated)
-
-			cur_offs = op_offs + op_len
-
-			suffix = op_suffixes.get(script[op_offs], "")
-			parts.append(f"<{script[op_offs:cur_offs].hex()}>{suffix}")
-
-		print("".join(parts))
+	dump_scripts()
 
 	#experiments.make_cmp_tables(all_texts.values())
 

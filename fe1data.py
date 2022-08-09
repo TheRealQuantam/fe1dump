@@ -111,6 +111,34 @@ class TerrainTypes(IntEnum):
 	Wall = 0x15
 	InvalidPc = 0x1f
 
+class UnitTypes(IntEnum):
+	SocialKnight = 1
+	ArmorKnight = 2
+	PegasusKnight = 3
+	Paladin = 4
+	DragonKnight = 5
+	Mercenary = 6
+	Fighter = 7
+	Pirate = 8
+	Thief = 9
+	Hero = 0xa
+	Archer = 0xb
+	Hunter = 0xc
+	Shooter = 0xd
+	Horseman = 0xe
+	Sniper = 0xf
+	Commando = 0x10
+	Mamkute = 0x11
+	Mage = 0x12
+	Cleric = 0x13
+	Bishop = 0x14
+	Lord = 0x15
+	General = 0x16
+
+	# Special-purpose types only used in specific circumstances
+	Dragon = 0x17 # Mamkute transformed form
+	EarthDragon = 0x18
+
 class CharGrowthChanceInfo(Structure):
 	_pack_ = True
 	_fields_ = [(name, c_uint8) for name in "strength skill wpn_lvl speed luck defense hp".split()]
@@ -167,7 +195,7 @@ class MapPc(LittleEndianStructure):
 		("bg_metatile", c_uint8),
 		("strength", c_uint8),
 		("skill", c_uint8),
-		("wpn_level", c_uint8),
+		("wpn_lvl", c_uint8),
 		("speed", c_uint8),
 		("luck", c_uint8),
 		("defense", c_uint8),
@@ -201,7 +229,7 @@ class PreMissionInfo(Structure):
 	_pack_ = True
 	_fields_ = (
 		("dialog_idx", c_uint8),
-		("unknown1", c_uint8),
+		("unk_1", c_uint8),
 	)
 
 class MissionDialogInfo(Structure):
@@ -209,9 +237,9 @@ class MissionDialogInfo(Structure):
 	_fields_ = (
 		("y", c_uint8),
 		("x", c_uint8),
-		("unknown2", c_uint8),
+		("unk_2", c_uint8),
 		("dialog_idx", c_uint8),
-		("unknown4", c_uint8),
+		("unk_4", c_uint8),
 	)
 
 ScriptInfo = namedtuple("ScriptInfo", ("bank_idx", "set_idx", "script_idx", "script_addr", "script", "op_infos"))
@@ -779,3 +807,36 @@ class FireEmblem1Data:
 
 		script_addr = self.text.get_script_addrs()[bank_idx][set_idx][script_idx]
 		return ScriptInfo(bank_idx, set_idx, script_idx, script_addr, script, ops_offs)
+
+	def get_unit_obj_for_map_npc(self, npc, is_first = False):
+		info = self.unit_type_infos[npc.type - 1]
+		lvl = npc.level - 1
+		lvl2 = lvl // 2
+		hp = info.hp + 3 * lvl2
+
+		obj = MapPc(
+			npc.id,
+			npc.type,
+			npc.level,
+			hp,
+			hp,
+			info.xp + lvl + (10 if is_first else 0),
+			0,
+			info.strength + lvl2,
+			info.skill + lvl2,
+			info.wpn_lvl + lvl2,
+			info.speed + lvl2,
+			info.luck,
+			info.defense + lvl2,
+			info.movement,
+			0,
+			0,
+			npc.y,
+			npc.x,
+			0,
+			(npc.item_idcs[0], npc.item_idcs[1], 0, 0),
+			npc.item_values,
+		)
+
+		return obj
+		
