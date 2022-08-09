@@ -721,6 +721,15 @@ if __name__ == "__main__":
 
 	print()
 
+	for title, idcs in (
+		("Pre-last Level Early Music Numbers:", data.map_music_info.early_music_nums),
+		("Pre-last Level Late Music Numbers:", data.map_music_info.late_music_nums),
+		("Last Level Music Numbers:", data.last_map_music_info),
+	):
+		print(f"{title}: Player: {idcs[0]:2x}, Computer: {idcs[1]:2x}")
+
+	print()
+
 	dump_unit_types()
 	dump_growth_stats()
 	dump_items()

@@ -171,6 +171,13 @@ def MakeMapBankInfo(rom, bank_idx, base_idx, num_maps, map_tbl_addr):
 
 Map = namedtuple("Map", "map_idx bank addr hdr data".split())
 
+class MapMusicInfo(Structure):
+	_pack_ = True
+	_fields_ = (
+		("early_music_nums", c_uint8 * 2),
+		("late_music_nums", c_uint8 * 2),
+	)
+
 class MapNpc(LittleEndianStructure):
 	_pack_ = True
 	_fields_ = (
@@ -376,6 +383,9 @@ class FireEmblem1Data:
 				).reshape(size)
 
 				self.maps[map_idx] = Map(map_idx, bank.bank_idx, addr, hdr, data)
+
+		self.map_music_info = MapMusicInfo.from_buffer(rom, leca(0xb9ac))
+		self.last_map_music_info = (c_uint8 * 2).from_buffer(rom, leca(0xb9b0))
 
 	def _load_map_obj_data(self):
 		rom = self._rom
