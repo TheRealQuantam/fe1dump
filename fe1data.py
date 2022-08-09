@@ -450,7 +450,7 @@ class FireEmblem1Data:
 		self.item_crit_chances = load_byte_tbl(0xd7c7)
 		self.item_prices = load_byte_tbl(0xd823)
 		self.item_uses = load_byte_tbl(0xd87f)
-		self.item_unknown = load_byte_tbl(0xd967)
+		self.item_effects = load_byte_tbl(0xd967)
 		self.item_flags = load_byte_tbl(0xd9c3)
 
 		self.item_class_equip_idcs = load_byte_tbl(0xfe58)

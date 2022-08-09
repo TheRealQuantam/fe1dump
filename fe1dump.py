@@ -140,6 +140,13 @@ if __name__ == "__main__":
 				method = 6,
 			)
 
+	def get_flag_str(flags, flag_names):
+		bit_str = f"{flags:08b}"
+
+		zero_ord = ord("0")
+		flag_parts = [(flag_names[i] if ch == "1" else "-") for i, ch in enumerate(bit_str)]
+		return "".join(flag_parts)
+
 	def dump_unit_types():
 		print("Enemy Unit Type Base Stats:")
 
@@ -381,8 +388,8 @@ if __name__ == "__main__":
 			("Crt", data.item_crit_chances, 3),
 			("Use", data.item_uses, 3),
 			("Prc", data.item_prices, 3),
-			("Unk", data.item_unknown, 3, lambda x: (f"{x:3x}" if x else "  -")),
-			("Flg", data.item_flags, 8, "{0:8b}"),
+			("Fx", data.item_effects, 2, lambda x: (f"{x:2x}" if x else " -")),
+			("Flags", data.item_flags, 8, lambda x: get_flag_str(x, "?uxscrmi")),
 			("SRq", data.item_reqs, 8, lambda x: (data.translate_text(data.char_names[(x & 0x7f) - 1]) if x & 0x80 else f"{x or '-':>3}")),
 		)
 
