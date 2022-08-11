@@ -32,6 +32,7 @@ for _base_idx, _chars in (
 	(0xad, "/%"),
 	(0xaf, ("<cross>",)),
 	(0xbb, "[]()"),
+	(0xbf, ("<femblem>",)),
 ):
 	_char_set.update({_base_idx + i: s for i, s in enumerate(_chars)})
 _char_set.update(((ch, f"\\x{ch:02x}") for ch in (set(range(256)) - _char_set.keys())))

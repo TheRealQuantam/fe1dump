@@ -25,6 +25,7 @@ for _base_idx, _chars in (
 	(0x9f, ("<heart>",)),
 	(0xa6, "ァィゥェォ「」／％✕"),
 	(0xbb, "［］〈〉"),
+	(0xbf, ("<femblem>",)),
 	(0xf0, "，〃´"),
 	(0xff, "　"),
 ):
