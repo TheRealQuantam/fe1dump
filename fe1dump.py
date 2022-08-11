@@ -183,24 +183,59 @@ if __name__ == "__main__":
 
 		return (hdr, fmt)
 
-	def format_table(tbl_fmt, tbl):
+	def format_table(tbl_fmt, tbl, *, base_idx = 0):
 		hdr = tbl_fmt["hdr"]
 		fmt = tbl_fmt["fmt"]
 		num_num_args = tbl_fmt["num_num_args"]
 		args = tbl_fmt["args"]
 
 		if num_num_args:
-			return hdr, [fmt(*entry[1:], **args, e = entry[0], idx = idx) for idx, entry in enumerate(tbl)]
+			return hdr, [fmt(*entry[1:], **args, e = entry[0], idx = idx + base_idx) for idx, entry in enumerate(tbl)]
 		else:
-			return hdr, [fmt(**args, e = entry, idx = idx) for idx, entry in enumerate(tbl)]
+			return hdr, [fmt(**args, e = entry, idx = idx + base_idx) for idx, entry in enumerate(tbl)]
 
-	def print_table(tbl_fmt, tbl):
-		hdr, lines = format_table(tbl_fmt, tbl)
+	def print_table(tbl_fmt, tbl, *, base_idx = 0):
+		hdr, lines = format_table(tbl_fmt, tbl, base_idx = base_idx)
 		print(hdr)
 		for line in lines:
 			print(line)
 
 		print()
+
+	gold_action_amounts = [1000, 2000, 5000, 10000, 15000, 20000, 30000, 50000]
+	simple_action_strs = colls.defaultdict(lambda x = 0: "Give Fire Emblem", {
+		0x80: "Add first character to party",
+		0x81: "If 26 {pc_names[38]} not in party add first character to party",
+		0x82: "If 27 {pc_names[39]} not in party add second character to party",
+		0x83: "If 2 {pc_names[2]} in party do dialog 51 instead",
+		0x84: "If Star/Light orbs acquired give {item_names[53]}",
+	})
+
+	def get_dlg_action_str(pc_names, item_names, action):
+		if action < 0x80:
+			if not action:
+				return ""
+			elif action < 0x78:
+				return f"Give {action:x} {item_names[action]}"
+			else:
+				return f"Give {gold_action_amounts[action - 0x78]}G"
+		else:
+			fmt_str = simple_action_strs[action]
+			return fmt_str.format(pc_names = pc_names, item_names = item_names)
+
+	def get_unit_items_str(item_names, num_items, obj):
+		parts = []
+
+		for item_idx in range(num_items):
+			item_num = obj.item_idcs[item_idx]
+			item_name = f"{item_names[item_num]}" if item_num else "None"
+			parts.append(f"{item_idx}: {item_num} {item_name} ({obj.item_values[item_idx]})")
+
+		for idx in range(num_items, len(obj.item_values)):
+			value = obj.item_values[idx]
+			parts.append(f"{idx}: {value}")
+
+		return ", ".join(parts)
 
 	def dump_unit_types():
 		print("Enemy Unit Type Base Stats:")
@@ -530,7 +565,10 @@ if __name__ == "__main__":
 			for idx, name in enumerate(data.enemy_names)
 		}
 		name_len = max(map(len, itertools.chain(pc_names.values(), npc_names.values())))
-		item_names = list(map(data.translate_text, data.item_names))
+		item_names = {
+			idx + 1: data.translate_text(name)
+			for idx, name in enumerate(data.item_names)
+		}
 		map_names = list(map(data.translate_text, data.miss_names))
 
 		unit_tbl_fmt = (
@@ -561,11 +599,19 @@ if __name__ == "__main__":
 			":idx:2x",
 			" x:e.x:2x",
 			" y:e.y:2x",
-			"Trg:e.unk_2:3x",
+			"Act:e.action:3x",
 			"Dlg:e.dialog_idx:3x",
-			"Unk4:e.unk_4:4x",
+			"Mus:e.music_num:3x",
+			"Til:0:3x",
+			"Action Effects:1:40",
 		)
 		map_dlg_fmt = prepare_print_table(dlg_info_fmt, 1, prefix = "\t")
+
+		dlg_unit_fmt = prepare_print_table(
+			(":3:2x",) + unit_tbl_fmt[1:],
+			1,
+			prefix = "\t",
+		)
 
 		shop_info_fmt = (
 			":idx:2x",
@@ -573,15 +619,44 @@ if __name__ == "__main__":
 			" y:e.y:2x",
 			"Type:0:10",
 			"Inv:e.inv_idx:3x",
+			"Til:1:3x",
 		)
 		map_shop_fmt = prepare_print_table(shop_info_fmt, 1, prefix = "\t")
 
 		print("Maps:")
 		for map_idx, map_info in data.maps.items():
 			hdr = map_info.hdr
+			map_data = map_info.data
+			pre_map_info = data.get_pre_miss_info(map_idx)
+
 			print(f"Map {map_idx:x}: {map_names[map_idx - 1]}")
 			print(f"\tSize: {hdr.metatiles_wide + 1}x{hdr.metatiles_high + 1}")
-			print(f"\tInitial Position: {hdr.initial_scroll_metatile_x}, {hdr.initial_scroll_metatile_y}\n")
+			print(f"\tInitial Scroll Position: {hdr.initial_scroll_metatile_x}, {hdr.initial_scroll_metatile_y}")
+			print(f"\tPre-Mission Script: {pre_map_info.dialog_idx:x}, music: {pre_map_info.music_num:x}")
+			print()
+
+			dlg_infos = data.get_miss_dlg_info(map_idx)
+			used_dlg_units = set()
+			if dlg_infos:
+				print("\tDialog Points:")
+				print_table(
+					map_dlg_fmt, 
+					[(info, map_data[info.y, info.x], get_dlg_action_str(pc_names, item_names, info.action)) for info in dlg_infos],
+				)
+
+				used_actions = set((info.action for info in dlg_infos))
+				if used_actions.intersection((0x80, 0x81)):
+					used_dlg_units.add(0)
+				if 0x82 in used_actions:
+					used_dlg_units.add(1)
+
+			shop_infos = data.map_shop_lists[map_idx - 1]
+			if shop_infos:
+				print("\tShops:")
+				print_table(
+					map_shop_fmt, 
+					[(info, ShopType(info.type).name, map_data[info.y, info.x]) for info in shop_infos],
+				)
 
 			for title, char_names, objs, is_pc in (
 				("\tNew Player Units:", pc_names, data.map_pc_lists[map_idx], True),
@@ -591,20 +666,7 @@ if __name__ == "__main__":
 					continue
 
 				num_items = 4 if is_pc else 2
-				obj_items = []
-				for obj in objs:
-					parts = []
-
-					for item_idx in range(num_items):
-						item_num = obj.item_idcs[item_idx]
-						item_name = f"{item_names[item_num - 1]}" if item_num else "None"
-						parts.append(f"{item_idx}: {item_num} {item_name} ({obj.item_values[item_idx]})")
-
-					for idx in range(num_items, len(obj.item_values)):
-						value = obj.item_values[idx]
-						parts.append(f"{idx}: {value}")
-
-					obj_items.append(", ".join(parts))
+				obj_items = [get_unit_items_str(item_names, num_items, obj) for obj in objs]
 
 				print(title)
 				print_table(map_unit_fmt, (
@@ -612,19 +674,29 @@ if __name__ == "__main__":
 					for u, items in zip(objs, obj_items)
 				))
 
-			dlg_infos = data.get_miss_dlg_info(map_idx)
-			if dlg_infos:
-				print("\tDialog Points:")
-				print_table(map_dlg_fmt, dlg_infos)
+			if used_dlg_units:
+				unit_list = data.map_dlg_pc_lists[map_idx - 1]
+				dlg_units = colls.OrderedDict()
+				for idx in sorted(used_dlg_units):
+					obj = unit_list[idx]
+					if obj.id and obj.id <= len(pc_names) and obj.type and obj.type <= num_units:
+						dlg_units[idx] = obj
 
-			shop_infos = data.map_shop_lists[map_idx - 1]
-			if shop_infos:
-				print("\tShops:")
-				print_table(
-					map_shop_fmt, 
-					[(info, ShopType(info.type).name) for info in shop_infos],
-				)
+				hdr, lines = format_table(dlg_unit_fmt, (
+					(u, pc_names[u.id], unames[u.type - 1], get_unit_items_str(item_names, 4, u), idx) 
+					for idx, u in dlg_units.items()
+				))
+				base_idx = next(iter(dlg_units))
 
+				print("\tDialog Player Units:")
+				print(hdr)
+				for idx in used_dlg_units:
+					if idx in dlg_units:
+						print(lines[idx - base_idx])
+					else:
+						print(f"\t{idx:2x}: CORRUPT")
+
+				print()
 		return
 
 	def dump_scripts():

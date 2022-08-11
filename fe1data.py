@@ -236,7 +236,7 @@ class PreMissionInfo(Structure):
 	_pack_ = True
 	_fields_ = (
 		("dialog_idx", c_uint8),
-		("unk_1", c_uint8),
+		("music_num", c_uint8),
 	)
 
 class MissionDialogInfo(Structure):
@@ -244,9 +244,9 @@ class MissionDialogInfo(Structure):
 	_fields_ = (
 		("y", c_uint8),
 		("x", c_uint8),
-		("unk_2", c_uint8),
+		("action", c_uint8),
 		("dialog_idx", c_uint8),
-		("unk_4", c_uint8),
+		("music_num", c_uint8),
 	)
 
 ScriptInfo = namedtuple("ScriptInfo", ("bank_idx", "set_idx", "script_idx", "script_addr", "script", "op_infos"))
@@ -410,6 +410,13 @@ class FireEmblem1Data:
 			rom, leca, 0xa4ff, num_maps, ty = MapShop, terms = 0xf0)
 		self.inv_list_addrs, self.inv_lists = load_term_lists(
 			rom, leca, 0xa6c2, 20, terms = 0xf0)
+
+		leca = self.map_dlg_pc_lists = get_leca4((3, 15))
+		self.map_dlg_pc_list_addrs = (c_uint16_le * num_maps).from_buffer(rom, leca(0x9466))
+		self.map_dlg_pc_lists = [
+			(MapPc * 2).from_buffer(rom, leca(addr))
+			for addr in self.map_dlg_pc_list_addrs
+		]
 
 		return
 
