@@ -774,10 +774,19 @@ class FireEmblem1Data:
 		return self.get_script_addrs()[bank_idx][set_idx][script_idx]
 
 	def get_script(self, bank_idx, set_idx, script_idx):
+		script_iter = self.text.get_script_iter(bank_idx, set_idx, script_idx)
+
+		return ScriptInfo(
+			bank_idx, 
+			set_idx, 
+			script_idx, 
+			self.text.get_script_addrs()[bank_idx][set_idx][script_idx], 
+			*self._get_script(script_iter),
+		)
+
+	def _get_script(self, script_iter):
 		opcode_re = re.compile(rb"[\xdf-\xef]")
 		op_lens = {i + ScriptOps.PlaySound: size for i, size in enumerate((2, 1, 2, 1, 1, -3, 6, -3, -1, 6, 2, 1, 1, 2, 1, 1, -1))}
-
-		script_iter = self.text.get_script_iter(bank_idx, set_idx, script_idx)
 
 		cur_offs = 0
 		script = bytearray()
@@ -822,8 +831,7 @@ class FireEmblem1Data:
 		if hasattr(script_iter, "cmp_bytes"):
 			cmp_frac = script_iter.cmp_bytes / script_iter.total_bytes
 
-		script_addr = self.text.get_script_addrs()[bank_idx][set_idx][script_idx]
-		return ScriptInfo(bank_idx, set_idx, script_idx, script_addr, script, ops_offs)
+		return script, ops_offs
 
 	def get_unit_obj_for_map_npc(self, npc, is_first = False):
 		info = self.unit_type_infos[npc.type - 1]

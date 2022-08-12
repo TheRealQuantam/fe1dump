@@ -146,9 +146,12 @@ class TextDataBase:
 
 		if not script_params:
 			script_params = (
-			(8, (0x33,)), 
-			(12, (0x5e,)),
-			(11, (0xb, 0x58)),  # There are 0x16 spots in the first table, but 0xb+ don't appear to point to valid data.
+				(3, (0x32,)),
+				(4, (0x42,)),
+				(7, (0, 0x6d)),
+				(8, (0x33,)), 
+				(12, (0x5e,)),
+				(11, (0xb, 0x58)),  # There are 0x16 spots in the first table, but 0xb+ don't appear to point to valid data.
 			)
 		terrain_name_params = terrain_name_params or (0, 0xe5f1, 0x10)
 		unit_name_params = unit_name_params or (0, 0xda1f, 0x18)

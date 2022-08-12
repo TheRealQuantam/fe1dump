@@ -89,4 +89,68 @@ def run(rom, data):
 	for thread in threads:
 		thread.join()"""
 
+	"""def print_all_strs(bstr):
+		end_offs = data._chr_start_offs
+		if isinstance(bstr, str):
+			bstr = bytes.fromhex(bstr)
+
+		bank_addrs = colls.defaultdict(list)
+		offs = rom.find(bstr, 0x10, end_offs)
+		while offs >= 0:
+			bank, addr = divmod(offs - 0x10, 0x4000)
+			addr += 0x8000 if bank != 15 else 0xc000
+
+			bank_addrs[bank].append(addr)
+
+			offs = rom.find(bstr, offs + 1, end_offs)
+
+		if bank_addrs:
+			print(f"{bstr.hex()}:")
+
+			for bank, addrs in bank_addrs.items():
+				print(f"{bank:x}: " + " ".join((f"{addr:4x}" for addr in addrs)))
+
+			print()
+
+	print_all_strs("8df177")
+	print_all_strs("8ef177")
+	print_all_strs("8cf177")
+	print_all_strs("8df477")
+	print_all_strs("8ef477")
+	print_all_strs("8cf477")
+	print_all_strs("20819a")
+	print_all_strs("4c819a")"""
+
+	"""import text_polinym
+	if isinstance(data.text, text_polinym.TextData):
+		for bank_idx in range(16):
+			leca = get_leca4((bank_idx, 15))
+			raw_list_addrs = (c_uint16_le * 16).from_buffer(rom, leca(0xbfe0))
+			list_addrs = list(filter(lambda x: (x != 0xffff), raw_list_addrs))
+
+			checked_addrs = set()
+			for set_idx, set_addr in enumerate(list_addrs):
+				if set_addr in checked_addrs:
+					continue
+
+				checked_addrs.add(set_addr)
+
+				script_addrs = (c_uint16_le * 2).from_buffer(rom, leca(set_addr))
+				for script_idx, script_addr in enumerate(script_addrs):
+					script_id = f"{bank_idx:x}:{set_idx:x}:{script_idx} ({script_addr:4x})"
+					try:
+						script_iter = text_polinym._ScriptInnerIterator(
+							data._rom,
+							data._chr_start_offs,
+							leca(script_addr),
+							data.text._dicts,
+						)
+						script, ops_offs = data._get_script(script_iter)
+
+						print(f"{script_id}:")
+						print(data.translate_text(script)[:300])
+
+					except:
+						print(f"FAILED TO PARSE: {script_id}")"""
+
 	return
