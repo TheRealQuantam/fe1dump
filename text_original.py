@@ -36,6 +36,26 @@ class TextData(TextDataBase):
 	def __init__(self, rom, chr_start_offs):
 		super().__init__(rom, chr_start_offs)
 
+		leca = get_leca4((6, 15))
+		self.item_class_equip_part_tbl = (c_uint8 * 9).from_buffer(rom, leca(0xa3d1))
+
+		self.item_class_equip_idcs = []
+		start_idx = 0
+		for tbl_idx, end_idx in enumerate(self.item_class_equip_part_tbl):
+			self.item_class_equip_idcs.extend([tbl_idx] * (end_idx - start_idx))
+
+			start_idx = end_idx
+		self.item_class_equip_idcs.extend([0xfe] * (0x5c - start_idx))
+
+		self.item_class_equip_tbl_addrs, self.item_class_equip_tbls = load_term_lists(
+			rom, 
+			leca, 
+			0xa3da, 
+			9, 
+			terms = 0xef, 
+			end_offs = chr_start_offs,
+		)
+
 	def get_script_iter(self, bank_idx, set_idx, script_idx):
 		leca = get_leca4((bank_idx, 15))
 		script_addr = self._script_addrs[bank_idx][set_idx][script_idx]

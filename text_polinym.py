@@ -110,6 +110,17 @@ class TextData(TextDataBase):
 			tbl = (c_uint16_le * length).from_buffer(rom, offs)
 			self._dicts.append(DictEntry(tbl, leca))
 
+		leca = get_leca4((6, 15))
+		self.item_class_equip_idcs = (c_uint8 * 0x5c).from_buffer(rom, leca(0xfe58))
+		self.item_class_equip_tbl_addrs, self.item_class_equip_tbls = load_term_lists(
+			rom, 
+			leca, 
+			0xa3d4, 
+			12, 
+			terms = 0xef, 
+			end_offs = chr_start_offs,
+		)
+
 		return
 
 	def get_script_iter(self, bank_idx, set_idx, script_idx):

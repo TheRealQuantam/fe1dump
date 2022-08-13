@@ -498,8 +498,6 @@ class FireEmblem1Data:
 		self.item_effects = load_byte_tbl(0xd967)
 		self.item_flags = load_byte_tbl(0xd9c3)
 
-		self.item_class_equip_idcs = load_byte_tbl(0xfe58)
-		self.item_class_equip_tbl_addrs, self.item_class_equip_tbls = load_byte_lists(0xa3d4, 12, 0xef)
 		self.item_class_equip_none = 0xfe
 		self.item_class_equip_base = 0
 
@@ -536,6 +534,10 @@ class FireEmblem1Data:
 
 		self.pre_miss_script_bank_set = (8, 0)
 		self.miss_dlg_script_bank_set = (12, 0)
+
+		self.item_class_equip_idcs = self.text.item_class_equip_idcs
+		self.item_class_equip_tbl_addrs = self.text.item_class_equip_tbl_addrs
+		self.item_class_equip_tbls = self.text.item_class_equip_tbls
 
 		return
 
