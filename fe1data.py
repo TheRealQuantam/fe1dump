@@ -480,6 +480,13 @@ class FireEmblem1Data:
 			for addr in self.char_growth_info_addrs
 		]
 
+		offs = leca(0xedb5)
+		num_entries = rom.index(0, offs, self._chr_start_offs) - offs
+		self.talk_src_pc_ids = (c_uint8 * num_entries).from_buffer(rom, offs)
+		self.talk_tgt_npc_ids = (c_uint8 * num_entries).from_buffer(rom, leca(0xedc4))
+		self.talk_script_idcs = (c_uint8 * num_entries).from_buffer(rom, leca(0xedd2))
+		self.talk_tgt_new_pc_ids = (c_uint8 * num_entries).from_buffer(rom, leca(0xede0))
+
 		return
 
 	def _load_item_data(self):

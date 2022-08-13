@@ -569,6 +569,51 @@ if __name__ == "__main__":
 
 		return
 
+	def dump_talks():
+		pc_names = {
+			idx + 1: data.translate_text(name) 
+			for idx, name in enumerate(data.char_names)
+		}
+		pc_name_len = max(map(len, pc_names.values()))
+		npc_names = {
+			idx + 1 | 0x80: data.translate_text(name) 
+			for idx, name in enumerate(data.enemy_names)
+		}
+		npc_name_len = max(map(len, npc_names.values()))
+
+		npc_maps = {}
+		for map_idx, npcs in data.map_npc_lists.items():
+			npc_maps.update(((npc.id, map_idx) for npc in npcs))
+
+		tbl_fmt = (
+			":idx:1x",
+			"Map:4:3x",
+			f"Player:0:{pc_name_len + 3}",
+			f"Enemy:1:{npc_name_len + 3}",
+			"Dlg:3:3x",
+			f"New Name:2:{pc_name_len + 3}",
+		)
+		cmp_fmt = prepare_print_table(tbl_fmt, 1, prefix = "\t")
+
+		tbl = list(zip(
+			data.talk_src_pc_ids,
+			data.talk_tgt_npc_ids,
+			data.talk_tgt_new_pc_ids,
+			data.talk_script_idcs,
+		))
+		field_names = [pc_names, npc_names, pc_names]
+		
+		print("Talk Interactions:")
+		print_table(cmp_fmt, (
+			(0,) + tuple((
+				f"{f:2x} {names[f]}" 
+				for names, f in zip(field_names, fs)
+			)) + (fs[3], npc_maps.get(fs[1], -1))
+			for fs in tbl
+		))
+
+		print()
+
 	def dump_map_info():
 		unames = list(map(data.translate_text, data.unit_names))
 		uname_len = max(map(len, unames))
@@ -821,6 +866,7 @@ if __name__ == "__main__":
 	dump_unit_types()
 	dump_growth_stats()
 	dump_items()
+	dump_talks()
 	dump_map_info()
 
 	pal_array = data.get_nes_palette_array(0)
