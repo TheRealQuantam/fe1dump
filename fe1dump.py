@@ -81,6 +81,22 @@ if __name__ == "__main__":
 	font10 = font = PIL.ImageFont.truetype("arialbd.ttf", 10)
 	font = PIL.ImageFont.truetype("arialbd.ttf", 11)
 
+	if isinstance(data.text, text_original.TextData):
+		class StdOut:
+			_char_map = str.maketrans(dict(
+				[(" ", "　")] + [(chr(idx), chr(0xfee0 + idx)) 
+					for idx in range(0x21, 0x7e)]
+			))
+
+			def __init__(self, out):
+				self._out = out
+
+			def write(self, s):
+				self._out.write(s.translate(StdOut._char_map))
+
+		sys.stdout = StdOut(sys.stdout)
+		sys.stderr = StdOut(sys.stderr)
+
 	def format_fn(stem, ext = None, number = None, is_anim = False):
 		anim_str = " anim" if is_anim else ""
 		num_str = f" {number}" if number is not None else ""
@@ -794,9 +810,9 @@ if __name__ == "__main__":
 	print()
 
 	for title, idcs in (
-		("Pre-last Level Early Music Numbers:", data.map_music_info.early_music_nums),
-		("Pre-last Level Late Music Numbers:", data.map_music_info.late_music_nums),
-		("Last Level Music Numbers:", data.last_map_music_info),
+		("Pre-last Level Early Music Numbers", data.map_music_info.early_music_nums),
+		("Pre-last Level Late Music Numbers", data.map_music_info.late_music_nums),
+		("Last Level Music Numbers", data.last_map_music_info),
 	):
 		print(f"{title}: Player: {idcs[0]:2x}, Computer: {idcs[1]:2x}")
 
