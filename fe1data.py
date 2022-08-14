@@ -534,6 +534,7 @@ class FireEmblem1Data:
 		self.enemy_names = self.text.enemy_names
 		self.item_names = self.text.item_names
 		self.miss_names = self.text.miss_names
+		self.loc_names = self.text.loc_names
 		self.game_strs = self.text.game_strs
 
 		self.pre_miss_info_addrs = (c_uint16_le * 0x19).from_buffer(rom, leca(0xa08d))

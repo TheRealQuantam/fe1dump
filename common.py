@@ -139,6 +139,7 @@ class TextDataBase:
 		enemy_name_params = None,
 		item_name_params = None,
 		miss_name_params = None,
+		loc_name_params = None,
 		game_str_params = None,
 		):
 		self._rom = rom
@@ -159,6 +160,7 @@ class TextDataBase:
 		enemy_name_params = enemy_name_params or (0, 0xdfa4, 0x45)
 		item_name_params = item_name_params or (0, 0xdad5, 0x5c)
 		miss_name_params = miss_name_params  or (0, 0xee08, 0x19)
+		loc_name_params = loc_name_params or (0, 0xefb7, 0x19)
 		game_str_params = game_str_params or (11, 0x8fc2, 0x48)
 
 		self._script_addrs = {}
@@ -178,7 +180,13 @@ class TextDataBase:
 		self._item_name_addrs, self.item_names = self._load_strings(*item_name_params)
 		self._miss_name_addrs, self.miss_names = self._load_strings(
 			*miss_name_params, 
-			(ScriptOps.EndOfLine,), 
+			(ScriptOps.EndOfLine,),
+			False,
+		)
+		self._loc_name_addrs, self.loc_names = self._load_strings(
+			*loc_name_params,
+			(ScriptOps.EndOfLine,),
+			False,
 		)
 		self._game_str_addrs, self.game_strs = self._load_strings(
 			*game_str_params,

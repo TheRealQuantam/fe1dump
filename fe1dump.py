@@ -631,6 +631,7 @@ if __name__ == "__main__":
 			for idx, name in enumerate(data.item_names)
 		}
 		map_names = list(map(data.translate_text, data.miss_names))
+		loc_names = list(map(data.translate_text, data.loc_names))
 
 		unit_tbl_fmt = (
 			":idx:2x",
@@ -691,6 +692,7 @@ if __name__ == "__main__":
 			pre_map_info = data.get_pre_miss_info(map_idx)
 
 			print(f"Map {map_idx:x}: {map_names[map_idx - 1]}")
+			print(f"\tLocation: {loc_names[map_idx - 1]}")
 			print(f"\tSize: {hdr.metatiles_wide + 1}x{hdr.metatiles_high + 1}")
 			print(f"\tInitial Scroll Position: {hdr.initial_scroll_metatile_x}, {hdr.initial_scroll_metatile_y}")
 			print(f"\tPre-Mission Script: {pre_map_info.dialog_idx:x}, music: {pre_map_info.music_num:x}")
