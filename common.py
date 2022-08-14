@@ -148,7 +148,7 @@ class TextDataBase:
 		if not script_params:
 			script_params = (
 				(3, (0x32,)),
-				(4, (0x42,)),
+				(4, (0x42, 0x36)),
 				(7, (0, 0x6d)),
 				(8, (0x33,)), 
 				(12, (0x5e,)),
