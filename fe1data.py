@@ -207,7 +207,7 @@ class MapPc(LittleEndianStructure):
 		("luck", c_uint8),
 		("defense", c_uint8),
 		("movement", c_uint8),
-		("unk_e", c_uint8),
+		("visibility", c_uint8),
 		("resistance", c_uint8),
 		("y", c_uint8),
 		("x", c_uint8),

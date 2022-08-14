@@ -648,7 +648,7 @@ if __name__ == "__main__":
 			"Lck:e.luck:3d",
 			"Def:e.defense:3d",
 			"Mov:e.movement:3d",
-			"Unk:e.unk_e:3d",
+			"Vis:e.visibility:3d",
 			"Res:e.resistance:3d",
 			" x:e.x:2x",
 			" y:e.y:2x",
