@@ -485,6 +485,28 @@ if __name__ == "__main__":
 		return
 
 	def dump_items():
+		item_stat_names = {
+			4: "HP", 
+			7: "strength", 
+			8: "skill", 
+			9: "weapon level", 
+			10: "speed", 
+			11: "luck", 
+			12: "defense", 
+			13: "movement", 
+			14: "visibility", 
+			15: "resistance",
+		}
+		item_stat_effects = [""] * num_items
+		for item_idx, fx_idx in data.stat_item_effects_idcs.items():
+			name = item_stat_names[data.item_stat_effects_offs[fx_idx]]
+			amount = data.item_stat_effects_amounts[fx_idx]
+			mx = data.item_stat_effects_max[fx_idx]
+			amount_str = f"{amount:+d}" if amount < 0x80 else f"+${amount:x}"
+			max_str = f"{mx:d}" if mx < 0x80 else f"${mx:x}"
+
+			item_stat_effects[item_idx - 1] = f"{amount_str} {name} to a max of {max_str}"
+
 		tbl_infos = (
 			("Mgt", data.item_mights, 3),
 			("CsI", data.item_class_equip_idcs, 3, lambda x: (f"{x:3x}" if x != data.item_class_equip_none else "  -")),
@@ -496,7 +518,8 @@ if __name__ == "__main__":
 			("Prc", data.item_prices, 3),
 			("Fx", data.item_effects, 2, lambda x: (f"{x:2x}" if x else " -")),
 			("Flags", data.item_flags, 8, lambda x: get_flag_str(x, "?uxscrmi")),
-			("SRq", data.item_reqs, 8, lambda x: (data.translate_text(data.char_names[(x & 0x7f) - 1]) if x & 0x80 else f"{x or '-':>3}")),
+			("Skill/Reqs", data.item_reqs, 10, lambda x: (f"{data.translate_text(data.char_names[(x & 0x7f) - 1]):10}" if x & 0x80 else f"{x or '-':>10}")),
+			("Stat Effects", item_stat_effects, 12, lambda x: x),
 		)
 
 		val_names = []

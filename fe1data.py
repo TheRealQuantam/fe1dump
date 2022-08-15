@@ -513,6 +513,16 @@ class FireEmblem1Data:
 		self.item_strong_against_none = 0
 		self.item_strong_against_base = 1
 
+		load_stat_effects = (c_uint8 * 10).from_buffer
+		self.item_stat_effects_offs = load_stat_effects(rom, leca(0xe3af))
+		self.item_stat_effects_amounts = load_stat_effects(rom, leca(0xe3b9))
+		self.item_stat_effects_max = load_stat_effects(rom, leca(0xe3c3))
+		self.stat_effects_base_item_idx = 0x45 # 0-based
+		self.stat_item_effects_idcs = {
+			i + self.stat_effects_base_item_idx + 1: i 
+			for i in range(len(self.item_stat_effects_max))
+		}
+
 	def _load_text(self):
 		rom = self._rom
 		leca = self.miss_info_leca = get_leca4((3, 15))
