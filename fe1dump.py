@@ -497,7 +497,13 @@ if __name__ == "__main__":
 			14: "visibility", 
 			15: "resistance",
 		}
+		mamkute_name = data.translate_text(data.unit_names[int(UnitTypes.Mamkute) - 1])
 		item_stat_effects = [""] * num_items
+		for item_idx, fx_idx in data.item_mamkute_bonus_idcs.items():
+			def_bonus = data.item_mamkute_def_bonuses[fx_idx]
+			if def_bonus:
+				item_stat_effects[item_idx - 1] = f"{def_bonus:+d} defense for {mamkute_name}"
+
 		for item_idx, fx_idx in data.stat_item_effects_idcs.items():
 			name = item_stat_names[data.item_stat_effects_offs[fx_idx]]
 			amount = data.item_stat_effects_amounts[fx_idx]

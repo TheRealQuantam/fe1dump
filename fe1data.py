@@ -523,6 +523,13 @@ class FireEmblem1Data:
 			for i in range(len(self.item_stat_effects_max))
 		}
 
+		self.item_mamkute_def_bonuses = (c_uint8 * 11).from_buffer(rom, leca(0xecf6))
+		self.item_mamkute_bonus_base_idx = 0x1f # 0-based
+		self.item_mamkute_bonus_idcs = {
+			i + self.item_mamkute_bonus_base_idx + 1: i
+			for i in range(len(self.item_mamkute_def_bonuses))
+		}
+
 	def _load_text(self):
 		rom = self._rom
 		leca = self.miss_info_leca = get_leca4((3, 15))
