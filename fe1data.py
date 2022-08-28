@@ -716,7 +716,7 @@ class FireEmblem1Data:
 
 		set_bits = post_set_bits | (pre_set_bits & ~clear_bits)
 
-		for part in metasprite:
+		for part in reversed(metasprite):
 			tile_y = y + part.y
 			tile_x = x + (8 - part.x if hflipped else part.x)
 			attribs = ((part.attribs & ~clear_bits) | set_bits) ^ hflip_flag
