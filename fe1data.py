@@ -19,25 +19,22 @@ _nes_pal_str = """ 84  84  84    0  30 116    8  16 144   48   0 136   68   0 10
 236 238 236  168 204 236  188 188 236  212 178 236  236 174 236  236 174 212  236 180 176  228 196 144  204 210 120  180 222 120  168 226 144  152 226 180  160 214 228  160 162 160    0   0   0    0   0   0"""
 nes_pal = np.array(list(map(int, re.split(r"\s+", _nes_pal_str.strip()))), np.uint8).reshape(-1, 3)
 
-num_terrains = 0x16
-num_terrain_names = 0x10
-num_metatiles = 0xd0
-num_units = 0x16
-num_pcs = 0x35
-num_items = 0x5c
-num_maps = 0x19
-
 class PacketHeader(LittleEndianStructure):
 	_pack_ = True
 	_fields_ = (
 		("ppu_addr", c_uint16_be),
-		("size", c_uint8),
+		("size", c_uint8, 6),
+		("fill_mode", c_uint8, 1),
+		("vertical", c_uint8, 1),
 	)
 
 class Packet:
 	def __init__(self, rom, hdr_offs):
-		self.hdr = PacketHeader.from_buffer(rom, hdr_offs)
-		self.data = (c_uint8 * self.hdr.size).from_buffer(rom, hdr_offs + sizeof(self.hdr))
+		hdr = self.hdr = PacketHeader.from_buffer(rom, hdr_offs)
+
+		data_size = 1 if hdr.fill_mode else hdr.size
+		self.size = sizeof(hdr) + data_size
+		self.data = (c_uint8 * data_size).from_buffer(rom, hdr_offs + sizeof(hdr))
 
 class Metatile(Structure):
 	_pack_ = True
@@ -292,7 +289,7 @@ class FireEmblem1Data:
 		self.terrain_dodge_chances = (c_uint8 * num_terrains).from_buffer(rom, leca(0xebd8))
 		self.terrain_name_idcs = (c_uint8 * num_terrains).from_buffer(rom, leca(0xebee))
 
-		self.unit_terrain_cost_addrs = (c_uint16_le * 0x16).from_buffer(rom, leca(0xe9c8))
+		self.unit_terrain_cost_addrs = (c_uint16_le * num_terrains).from_buffer(rom, leca(0xe9c8))
 		self.unit_terrain_costs = [
 			(c_uint8 * num_terrains).from_buffer(rom, leca(addr)) 
 			for addr in self.unit_terrain_cost_addrs
@@ -330,14 +327,12 @@ class FireEmblem1Data:
 		self.map_anim_banks = [BankAnimFrame(*x) for x in zip(anim_frame_banks, anim_frame_lengths)]
 
 		leca = get_leca4((11, 15))
-		num_sprites = 0x16
-		
 		self.map_sprite_bank = 8
 		self.map_sprite_sprite_idx = 0
-		self.map_sprite_frame_idcs = (MetaspriteFrameIndices * num_sprites).from_buffer(rom, leca(0xb0aa))
+		self.map_sprite_frame_idcs = (MetaspriteFrameIndices * num_units).from_buffer(rom, leca(0xb0aa))
 		self.map_sprite_pal_idcs = (c_uint8 * 2).from_buffer(rom, leca(0xb15a)) # First index for player, second for enemy
-		self.map_sprite_right_modes = (c_uint8 * num_sprites).from_buffer(rom, leca(0xb15c)) # If non-0 right facing is mirroed horizontally
-		self.map_sprite_chr_banks = (c_uint8 * num_sprites).from_buffer(rom, leca(0xb172))
+		self.map_sprite_right_modes = (c_uint8 * num_units).from_buffer(rom, leca(0xb15c)) # If non-0 right facing is mirroed horizontally
+		self.map_sprite_chr_banks = (c_uint8 * num_units).from_buffer(rom, leca(0xb172))
 
 		leca = get_leca4((self.map_sprite_bank, 15))
 		self.map_sprite_tbls_addr = (c_uint16_le * 1).from_buffer(rom, leca(0xbfd0))
@@ -346,7 +341,7 @@ class FireEmblem1Data:
 		self.map_sprite_tbls = [sprites]
 		
 		self.map_sprites = []
-		for sprite_idx in range(num_sprites):
+		for sprite_idx in range(num_units):
 			sprite = UnitSpriteInfo(
 				self.map_sprite_bank,
 				self.map_sprite_sprite_idx,
@@ -703,9 +698,17 @@ class FireEmblem1Data:
 			tgt = bitmap[tile_y:tile_y+8, tile_x:tile_x+8]
 			ma.choose(tile.mask, (tile, tgt), out = tgt)
 
-	def draw_sprite_type2(self, bitmap, chr_bank, metasprite, x = 0, y = 0, *, pal_idx = None, hflipped = False, pre_set_bits = 0, clear_bits = 0, post_set_bits = 0):
+	def get_sprite_type2_bounds(self, sprite):
+		pos = np.array([(part.y, part.x) for part in sprite], dtype = int).transpose()
+		return np.array((
+			(pos[0].min(), pos[1].min()),
+			(pos[0].max() + 8, pos[1].max() + 8),
+		), dtype = int)
+
+	def draw_sprite_type2(self, bitmap, chr_bank, metasprite, x = 0, y = 0, *, pal_idx = None, hi_pal = False, hflipped = False, pre_set_bits = 0, clear_bits = 0, post_set_bits = 0):
 		flip_axes_lists = (tuple(), (1,), (0,), (0, 1))
 		hflip_flag = 0x40 if hflipped else 0
+		hi_pal = bool(hi_pal) * 0x10
 		
 		if pal_idx is not None:
 			post_set_bits |= pal_idx
@@ -718,7 +721,7 @@ class FireEmblem1Data:
 			tile_x = x + (8 - part.x if hflipped else part.x)
 			attribs = ((part.attribs & ~clear_bits) | set_bits) ^ hflip_flag
 
-			tile = chr_bank[part.tile_idx] + (attribs & 3) * 4
+			tile = chr_bank[part.tile_idx] + ((attribs & 3) * 4 + hi_pal)
 			flip_axes = flip_axes_lists[attribs >> 6]
 			if flip_axes:
 				tile = np.flip(tile, flip_axes)

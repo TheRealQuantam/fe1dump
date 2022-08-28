@@ -118,7 +118,7 @@ if __name__ == "__main__":
 			append_images = frames[1:],
 			duration = frame_times,
 			loop = 0,
-			disposal = 2,
+			disposal = 2 if trans_idx != -1 else 1,
 			)
 
 	def SaveAnimWebp(name, number, frames, frame_times):

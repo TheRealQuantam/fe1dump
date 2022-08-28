@@ -19,6 +19,17 @@ namedtuple = colls.namedtuple
 
 c_uint16_le = c_uint16.__ctype_le__
 c_uint16_be = c_uint16.__ctype_be__
+c_int16_le = c_int16.__ctype_le__
+c_int16_be = c_int16.__ctype_be__
+
+num_terrains = 0x16
+num_terrain_names = 0x10
+num_metatiles = 0xd0
+num_units = 0x16
+num_ext_units = 0x18
+num_pcs = 0x35
+num_items = 0x5c
+num_maps = 0x19
 
 class iNesHeader(LittleEndianStructure):
 	_pack_ = True
@@ -154,13 +165,13 @@ class TextDataBase:
 				(12, (0x5e,)),
 				(11, (0xb, 0x58)),  # There are 0x16 spots in the first table, but 0xb+ don't appear to point to valid data.
 			)
-		terrain_name_params = terrain_name_params or (0, 0xe5f1, 0x10)
-		unit_name_params = unit_name_params or (0, 0xda1f, 0x18)
-		char_name_params = char_name_params or (0, 0xde2b, 0x35)
+		terrain_name_params = terrain_name_params or (0, 0xe5f1, num_terrain_names)
+		unit_name_params = unit_name_params or (0, 0xda1f, num_ext_units)
+		char_name_params = char_name_params or (0, 0xde2b, num_pcs)
 		enemy_name_params = enemy_name_params or (0, 0xdfa4, 0x45)
-		item_name_params = item_name_params or (0, 0xdad5, 0x5c)
-		miss_name_params = miss_name_params  or (0, 0xee08, 0x19)
-		loc_name_params = loc_name_params or (0, 0xefb7, 0x19)
+		item_name_params = item_name_params or (0, 0xdad5, num_items)
+		miss_name_params = miss_name_params  or (0, 0xee08, num_maps)
+		loc_name_params = loc_name_params or (0, 0xefb7, num_maps)
 		game_str_params = game_str_params or (11, 0x8fc2, 0x48)
 
 		self._script_addrs = {}
