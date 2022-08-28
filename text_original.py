@@ -42,9 +42,9 @@ class TextData(TextDataBase):
 		self.item_class_equip_idcs = []
 		start_idx = 0
 		for tbl_idx, end_idx in enumerate(self.item_class_equip_part_tbl):
-			self.item_class_equip_idcs.extend([tbl_idx] * (end_idx - start_idx))
+			self.item_class_equip_idcs.extend([tbl_idx] * (end_idx - 1 - start_idx))
 
-			start_idx = end_idx
+			start_idx = end_idx - 1
 		self.item_class_equip_idcs.extend([0xfe] * (0x5c - start_idx))
 
 		self.item_class_equip_tbl_addrs, self.item_class_equip_tbls = load_term_lists(

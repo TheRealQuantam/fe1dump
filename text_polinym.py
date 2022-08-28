@@ -111,7 +111,7 @@ class TextData(TextDataBase):
 			self._dicts.append(DictEntry(tbl, leca))
 
 		leca = get_leca4((6, 15))
-		self.item_class_equip_idcs = (c_uint8 * 0x5c).from_buffer(rom, leca(0xfe58))
+		self.item_class_equip_idcs = (c_uint8 * num_items).from_buffer(rom, leca(0xfe58 + 1))
 		self.item_class_equip_tbl_addrs, self.item_class_equip_tbls = load_term_lists(
 			rom, 
 			leca, 
