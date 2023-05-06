@@ -7,6 +7,7 @@
 """
 
 import numpy as np
+import numpy.ma as ma
 import PIL.Image
 import PIL.ImagePalette
 import time
@@ -15,6 +16,27 @@ Image = PIL.Image
 ImagePalette = PIL.ImagePalette.ImagePalette
 
 from common import *
+
+def timeit(func, *, count = None, tgt_time = 3):
+	start_time = time.perf_counter()
+
+	if count:
+		for i in range(count):
+			func()
+
+		return (time.perf_counter() - start_time) / count
+
+	else:
+		count = 0
+		total_time = 0
+
+		while total_time < tgt_time:
+			func()
+
+			count += 1
+			total_time = time.perf_counter() - start_time
+
+		return total_time / count
 
 def make_cmp_tables(texts):
 	lower_word_counts = colls.defaultdict(int)
@@ -152,5 +174,40 @@ def run(rom, data):
 
 					except:
 						print(f"FAILED TO PARSE: {script_id}")"""
+
+	"""base_tile = ma.array(((0, 1), (2, 3)), dtype = np.uint8, mask = ((1, 0), (0, 1)))
+	small = np.tile(base_tile, (4, 4))
+	large = np.tile(small, (256, 256))
+	small_buff = ma.masked_all(small.shape, dtype = np.uint8)
+	large_buff = ma.masked_all(large.shape, dtype = np.uint8)
+
+	palette = ImagePalette("RGB", bytes((0, 0, 0, 0, 0, 255, 0, 255, 0, 255, 0, 0)))
+	base_pa = np.array((3, 255), dtype = np.uint8)
+	simg_buff = Image.fromarray(np.tile(base_pa, (8, 8, 1)), "PA")
+	simg_buff.putpalette(palette)
+	simg = Image.fromarray(np.stack((small.data, np.asarray(small.mask, dtype = np.uint8) - 1)).transpose(1, 2, 0), "PA")
+	limg_buff = Image.fromarray(np.tile(base_pa, (2048, 2048, 1)), "PA")
+	limg_buff.putpalette(palette)
+	limg = Image.fromarray(np.stack((large.data, np.asarray(large.mask, dtype = np.uint8) - 1)).transpose(1, 2, 0), "PA")
+
+	simg_secs = timeit(lambda mask = simg.getchannel("A"): simg_buff.paste(simg, mask = mask))
+	limg_secs = timeit(lambda mask = limg.getchannel("A"): limg_buff.paste(limg, mask = mask))
+	rep_img_secs = timeit(lambda: simg_buff.resize((128, 128), Image.Resampling.NEAREST))
+
+	def assign_choose(tgt, src):
+		ma.choose(src.mask, (src, tgt), out = tgt)
+
+	def assign_ma(tgt, src):
+		mask = ~src.mask
+		tgt[mask] = src[mask]
+
+	small_secs = timeit(lambda: ma.choose(small.mask, (small, small_buff), out = small_buff))
+	small_in_large_secs = timeit(lambda: assign_choose(large_buff[500:500+small.shape[0], 500:500+small.shape[1]], small))
+	large_secs = timeit(lambda: ma.choose(large.mask, (large, large_buff), out = large_buff))
+	rep_secs = timeit(lambda: small_buff.repeat(16, 0).repeat(16, 1))
+
+	small2_secs = timeit(lambda: assign_ma(small_buff, small))
+	small2_in_large_secs = timeit(lambda: assign_ma(large_buff[500:500+small.shape[0], 500:500+small.shape[1]], small))
+	large2_secs = timeit(lambda: assign_ma(large_buff, large))"""
 
 	return

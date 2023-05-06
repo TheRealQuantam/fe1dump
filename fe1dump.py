@@ -18,6 +18,7 @@ import sys
 
 from common import *
 from fe1data import *
+import bscript
 import experiments
 
 Image = PIL.Image
@@ -874,6 +875,205 @@ if __name__ == "__main__":
 
 			print("".join(parts))
 
+	def save_opt_frames(path, num, raw_frames, frame_times):
+		used = []
+		for frame_img, frame_pal in raw_frames:
+			frame = frame_pal[frame_img]
+			used.append((np.unique(frame_img), frame_pal))
+
+		cmn_used = [frame_pal[frame_used] for frame_used, frame_pal in used]
+		all_used = np.unique(np.concatenate(cmn_used, dtype = np.uint8))
+		cmn_map = np.zeros((len(nes_pal),), dtype = np.uint8)
+		cmn_map[all_used] = list(range(len(all_used)))
+
+		frames = []
+		new_pal = ImagePalette("RGB", bytes(nes_pal[all_used].reshape(-1)))
+		for idx, (frame_img, frame_pal) in enumerate(raw_frames):
+			pal_map = cmn_map[frame_pal]
+			#assert np.array_equal(all_used[pal_map[frame_img]], frame_pal[frame_img])
+			img = Image.fromarray(pal_map[frame_img], "L")
+			img.putpalette(new_pal)
+
+			frames.append(img)
+
+		SaveAnimImages(path, num, frames, frame_times)
+
+	def dump_battle_sprites(smallest_size = False):
+		NoFxUnitSpec = namedtuple("NoFxUnitSpec", "type item_idx tbl_idx")
+		no_fx_unit_specs = []
+		for units, specs in (
+			((UnitTypes.General,), ((2, 0),)),
+			#((UnitTypes.Lord,), ((2, 0), (2, 1), (5, 3), (5, 4), (8, 5), (8, 6))),
+			((UnitTypes.SocialKnight, UnitTypes.ArmorKnight, UnitTypes.PegasusKnight, UnitTypes.Paladin, UnitTypes.DragonKnight, UnitTypes.Mercenary, UnitTypes.Thief, UnitTypes.Hero), ((2, 0), (0xd, 1), (0xf, 3))),
+			((UnitTypes.Fighter, UnitTypes.Pirate), ((0x1b, 0), (0x1f, 1),)),
+			((UnitTypes.Archer, UnitTypes.Hunter, UnitTypes.Horseman, UnitTypes.Sniper), ((0x13, 0), (0x12, 1), (0x14, 2))),
+			((UnitTypes.Commando,), ((2, 0),)),
+			((UnitTypes.Mamkute,), ((0x24, 0),)), # Actually Mamkute with no weapon
+		):
+			for item_idx, tbl_idx in specs:
+				item_classes = data.item_class_equip_tbls[data.item_class_equip_idcs[item_idx - 1]]
+				no_fx_unit_specs.extend((
+					NoFxUnitSpec(unit, item_idx, tbl_idx)
+					for unit in units
+					if unit in item_classes
+				))
+
+		used_chr_banks = set(data.unit_bsprite_chr_banks)
+		chr_banks = {idx: data.get_chr_bank_array(idx) for idx in used_chr_banks}
+		pal_pack = np.tile(data.get_palette_pack_array(data.base_battle_pal_pack, True), 2)
+		palette = ImagePalette("RGB", bytes(nes_pal[pal_pack]))
+		nes_palette = ImagePalette("RGB", bytes(nes_pal))
+
+		bg_sprites = {}
+		for bank_idx, addrs in data.bsprite_bg_frame_addrs.items():
+			leca = get_leca4((bank_idx, 15))
+
+			bg_sprites[bank_idx] = []
+			for addr in addrs:
+				msprite = BgMetasprite(data._rom, leca(addr))
+				bounds = data.get_bg_sprite_bounds(msprite)
+				"""abounds = np.abs(bounds)
+				size = (np.max(abounds[:, 0]) * 2, np.max(abounds[:, 1] * 2))
+				chr_map = np.full(size, 0xff, dtype = np.uint8)
+				data.draw_bg_sprite_chrs(chr_map, msprite, size[1] // 2, size[0] // 2)"""
+				chr_map = np.full(bounds[1] - bounds[0], 0xff, dtype = np.uint8)
+				data.draw_bg_sprite_chrs(chr_map, msprite, *-bounds[0][::-1])
+
+				bg_sprites[bank_idx].append((chr_map, bounds[0]))
+
+		done_frames = set()
+		for spec in no_fx_unit_specs:
+			unit_idx = spec.type - 1
+			chr_bank_idx = data.unit_bsprite_chr_banks[unit_idx]
+			chr_bank = chr_banks[chr_bank_idx]
+			bank_idx, base_unit_idx = data.unit_bsprite_bank_infos[unit_idx]
+			bank_unit_idx = unit_idx - base_unit_idx
+			leca = get_leca4((bank_idx, 15))
+
+			script_idx = data.unit_battle_script_datas[unit_idx][spec.tbl_idx]
+			unit_frame_idx = data.unit_bsprite_init_frame_idcs[unit_idx][spec.tbl_idx]
+			frame_tbl_addr = data.unit_bsprite_bg_frame_tbl_addrs[bank_idx][0][bank_unit_idx]
+			frame_idx = data._rom[leca(frame_tbl_addr + unit_frame_idx)]
+
+			img_spec = (spec.type, script_idx, frame_idx)
+			if img_spec in done_frames:
+				continue
+
+			msprite, base_offs = bg_sprites[bank_idx][frame_idx]
+			bitmap = chr_bank[msprite].transpose(0, 2, 1, 3).reshape((msprite.shape[0] * 8, -1))
+			img = Image.fromarray(bitmap, "P")
+			
+			unit_pal_pack = pal_pack.copy().reshape(2, -1, 4)
+			pal_idx = data.battle_team_unit_pal_idcs[0][unit_idx]
+			unit_pal_pack[:, 0, :] = data.battle_pal_rows[pal_idx]
+			unit_pal = ImagePalette("RGB", bytes(nes_pal[unit_pal_pack].reshape(-1)))
+			img.putpalette(unit_pal)
+
+			save_images(out_path.joinpath(f"bsprite {spec.type:2x} {spec.type.name} {spec.item_idx:2x} {spec.tbl_idx:2x}"), None, img)
+
+			#try:
+			anim_frames = []
+			frame_times = []
+			raw_frames = []
+			prev_tgt_frame = -1
+			cur_time = 0
+			src_mspf = 1000 / 60
+			tgt_mspf = 1000 / 20
+			mspf_ratio = src_mspf / tgt_mspf
+			redrawn = False
+			emu = bscript.BattleScriptEmu(
+				data, 
+				1, 
+				spec.type, 
+				script_idx, 
+				unit_frame_idx,
+				chr_banks = chr_banks,
+			)
+			while not emu.done:
+				"""if emu._unit == UnitTypes.Lord and emu._script_idx == 0xf:
+					print(f"{emu.total_frames:x} Anim={emu._sprite.anim_script_pos:x} Frame={emu._sprite.frame_idx:x} x={emu._sprite.pos[1]:x} y={emu._sprite.pos[0]:x} Flip={emu._sprite.rev_facing}")"""
+
+				redrawn = redrawn or emu.redraw
+				tgt_frame = int(round(emu.total_frames * mspf_ratio))
+				if ((tgt_frame - prev_tgt_frame) if prev_tgt_frame >= 0 else True):
+					tgt_src_frame = tgt_frame / mspf_ratio
+					if emu.total_frames == int(round(tgt_src_frame)):
+						elapsed_ms = ((tgt_frame - prev_tgt_frame) * tgt_mspf) if prev_tgt_frame >= 0 else 0
+
+						frame_img, frame_pal = emu.get_frame()
+						if smallest_size:
+							img = Image.fromarray(frame_pal.reshape(-1)[frame_img], "L")
+							img.putpalette(nes_palette)
+						else:
+							img = Image.fromarray(frame_img, "L")
+							palette = ImagePalette("RGB", bytes(nes_pal[frame_pal].reshape(-1)))
+							img.putpalette(palette)
+					
+						anim_frames.append(img)
+						frame_times.append(elapsed_ms / src_mspf)
+						
+						raw_frames.append((frame_img, frame_pal.flatten())) # Copy frame_pal
+					
+						prev_tgt_frame = tgt_frame
+						redrawn = False
+
+				emu.update()
+
+			SaveAnimImages(
+				out_path.joinpath(f"battack"),
+				f"{spec.type:2x} {spec.type.name} {spec.item_idx:2x} {spec.tbl_idx:2x}",
+				anim_frames,
+				[num_frames * 1000 // 60 for num_frames in frame_times],
+			)
+			"""except:
+				print(f"EXCEPTION: {spec.type:2x} {spec.type.name} {spec.item_idx:2x} {spec.tbl_idx:2x}/{script_idx:x}")"""
+
+			save_opt_frames(
+				out_path.joinpath(f"battacko"),
+				f"{spec.type:2x} {spec.type.name} {spec.item_idx:2x} {spec.tbl_idx:2x}",
+				raw_frames,
+				[num_frames * 1000 // 60 for num_frames in frame_times],
+			)
+
+			done_frames.add(img_spec)
+
+		return
+
+		for unit_idx in range(num_ext_units):
+			bank_idx, unit_base_idx = data.unit_bsprite_bank_infos[unit_idx]
+			eff_unit_idx = unit_idx - unit_base_idx
+			leca = get_leca4((bank_idx, 15))
+
+			if unit_idx < num_units:
+				chr_bank_idx = data.unit_bsprite_chr_banks[unit_idx]
+				chr_bank = chr_banks[chr_bank_idx]
+
+				frame_idx = data.unit_bsprite_init_frame_idcs[unit_idx][0]
+				frame_addrs = data.unit_bsprite_frame_addrs[bank_idx][eff_unit_idx]
+				msprite = data._load_metasprite_type2(leca(frame_addrs[frame_idx]))
+
+				bounds = data.get_sprite_type2_bounds(msprite)
+				"""abounds = np.abs(bounds)
+				size = (np.max(abounds[:, 0]) * 2, np.max(abounds[:, 1] * 2))
+				bitmap = ma.masked_all(size, dtype = np.uint8)
+				data.draw_sprite_type2(bitmap, chr_bank, msprite, size[1] // 2, size[0] // 2)"""
+				bitmap = ma.masked_all(bounds[1] - bounds[0], dtype = np.uint8)
+				data.draw_sprite_type2(bitmap, chr_bank, msprite, *-bounds[0][::-1])
+
+				img = Image.fromarray(bitmap.filled(), "P")
+				img.putpalette(palette)
+
+		for chr_bank_idx, bank_idx, frame_idx in ((3, 1, 8), (14, 0, 0x4a), (14, 0, 0x4b), (14, 0, 0x4c)):
+			chr_bank = chr_banks[chr_bank_idx]
+			msprite, base_offs = bg_sprites[bank_idx][frame_idx]
+			bitmap = chr_bank[msprite].transpose(0, 2, 1, 3).reshape((msprite.shape[0] * 8, -1))
+			img = Image.fromarray(bitmap, "P")
+			img.putpalette(palette)
+
+		return
+
+	experiments.run(rom, data)
+
 	for hdr_str, strs in (
 		("\nTerrain Names:", data.terrain_names),
 		("\nEnemy Names:", data.enemy_names),
@@ -899,12 +1099,11 @@ if __name__ == "__main__":
 	dump_items()
 	dump_talks()
 	dump_map_info()
+	bscript.dump_battle_scripts(data)
 
 	pal_array = data.get_nes_palette_array(0)
 	remap_pal = data.get_remap_palette_array(pal_array, True)
 	palette = ImagePalette("RGB", bytes(pal_array))
-
-	experiments.run(rom, data)
 
 	dump_scripts()
 
@@ -1004,4 +1203,6 @@ if __name__ == "__main__":
 
 		SaveAnimImages(out_path.joinpath("map objs"), map_idx, frames, frame_times)
 	
+	dump_battle_sprites()
+
 	a = 1

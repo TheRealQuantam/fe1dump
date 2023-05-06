@@ -47,6 +47,13 @@ class Metatile(Structure):
 
 BankAnimFrame = namedtuple("BankAnimFrame", ("bank", "num_frames"))
 
+class XyOffset(Structure):
+	_pack_ = True
+	_fields_ = (
+		("x", c_int8),
+		("y", c_int8),
+	)
+	
 class YxCoordinate(Structure):
 	_pack_ = True
 	_fields_ = (
@@ -69,6 +76,7 @@ class SpriteFacing(IntEnum):
 	Left = 3
 
 Metasprite = namedtuple("Metasprite", ("tile_attribs", "tile_idcs"))
+
 class MetaspriteType2Sprite(Structure):
 	_pack_ = True
 	_fields_ = (
@@ -79,9 +87,48 @@ class MetaspriteType2Sprite(Structure):
 	)
 
 MetaspriteFrameIndices = (c_uint8 * 2) * 4
+
 UnitSpriteInfo = namedtuple("UnitSpriteInfo", ("bank_idx", "tbl_idx", "sprite_tbl", "chr_bank_idx", "frame_idcs", "right_facing_is_flipped"))
 
 Portrait = namedtuple("Portrait", ("bank_idx", "pal_idx", "sprite_idx", "frame_sprite_idcs", "frame_times"))
+
+class BgMetaspriteRowHdr(LittleEndianStructure):
+	_pack_ = True
+	_fields_ = (
+		("rel_addr", c_int16_le),
+		("num_tiles", c_uint8, 6),
+		("fill_mode", c_uint8, 1),
+		("vertical", c_uint8, 1),
+	)
+
+class BgMetaspriteHdr(Structure):
+	_pack_ = True
+	_fields_ = (("num_bytes", c_uint8),)
+
+class BgMetaspriteRow:
+	def __init__(self, rom, offs):
+		hdr = self.hdr = BgMetaspriteRowHdr.from_buffer(rom, offs)
+		y, rem = divmod(hdr.rel_addr + 0x10, 0x20)
+		self.rel_pos = np.array((y, rem - 0x10), dtype = int)
+
+		data_size = 1 if hdr.fill_mode else hdr.num_tiles
+		self.tiles = np.frombuffer(
+			rom, np.uint8, data_size, offs + sizeof(hdr))
+		self.size = sizeof(hdr) + data_size
+
+class BgMetasprite:
+	def __init__(self, rom, offs):
+		self.hdr = BgMetaspriteHdr.from_buffer(rom, offs)
+		self.rows = []
+		offs += sizeof(self.hdr)
+
+		bytes_left = self.hdr.num_bytes - sizeof(self.hdr)
+		while bytes_left > 0:
+			row = BgMetaspriteRow(rom, offs)
+			self.rows.append(row)
+
+			offs += row.size
+			bytes_left -= row.size
 
 class TerrainTypes(IntEnum):
 	Plain = 0
@@ -248,6 +295,45 @@ class MissionDialogInfo(Structure):
 
 ScriptInfo = namedtuple("ScriptInfo", ("bank_idx", "set_idx", "script_idx", "script_addr", "script", "op_infos"))
 
+class BScriptOps(IntEnum):
+	BeginMove = 0
+	SpawnAnimProjectile = 1
+	SetCounter = 2
+	WaitForCondition = 3
+	SetLayers = 4
+	BeginAnim = 5
+	FlipFacing = 6
+	LoadPacket = 7
+	PauseAnim = 8
+	ResumeAnim = 9
+	ApplyDamage = 0xa
+	ShowHpBar = 0xb
+	ShakeScreen = 0xc
+	SpriteAttributes = 0xd
+	EndOfScript = 0xe
+	SetXPos = 0xf
+	SetFrame = 0x10
+	SpawnProjectile = 0x11
+	WaitForProjFinish = 0x12
+	WaitForProjHit = 0x13
+	WaitForProjStop = 0x14
+	SpawnUnitProjectile = 0x15
+	SetUnitFrame = 0x16
+	WaitForFxScript = 0x17
+	SetProjCounter = 0x18
+	SetSpecialFrame = 0x19
+	SetBgPalette = 0x1a
+	PlaySound = 0x1b
+	ShowFlockAnim = 0x1c
+
+class BattleScriptOp(Structure):
+	_pack_ = True
+	_fields_ = (("opcode", c_uint8), ("param", c_uint8))
+
+class BAnimScriptFrameOps(IntEnum):
+	Restart = 0xfe
+	End = 0xff
+
 class FireEmblem1Data:
 	def __init__(self, rom):
 		rom = self._rom = rom
@@ -275,6 +361,8 @@ class FireEmblem1Data:
 
 		self._load_unit_data()
 		self._load_item_data()
+
+		self._load_battle_gfx()
 
 		self._load_text()
 
@@ -525,6 +613,175 @@ class FireEmblem1Data:
 			for i in range(len(self.item_mamkute_def_bonuses))
 		}
 
+	def _load_battle_gfx(self):
+		rom = self._rom
+		block_size = 12
+
+		def rom_bytes(addr, length = 1):
+			return (c_uint8 * length).from_buffer(rom, leca(addr))
+
+		def rom_addrs(addr, length = 1):
+			return (c_uint16_le * length).from_buffer(rom, leca(addr))
+
+		self.unit_bsprite_bank_infos = dict(zip(
+			itertools.count(),
+			[(1, 0)] * block_size + [(0, block_size)] * block_size,
+		))
+
+		self.unit_bsprite_frame_addrs = {}
+		self.bsprite_bg_frame_addrs = {}
+		self.unit_bsprite_bg_frame_tbl_addrs = {}
+
+		for bank_idx, bank_info in enumerate((
+			({0x8000: 0x4f, 0x8004: 0x4d, 0x8012: 0x46, 0x8084: 0xd}, 0x7d),
+			((0xe, 0x17, 0x11, 0x15, 0x14, 0xf, 
+				0x11, 0x11, 5, 0xc, 5, 5), 0x68),
+		)):
+			unit_sprite_frames, num_bg_frames = bank_info
+			leca = get_leca4((bank_idx, 15))
+
+			unit_bsprite_frame_tbl_addrs = rom_addrs(0xbfd0, block_size)
+			if isinstance(unit_sprite_frames, dict):
+				unit_sprite_frames = [
+					unit_sprite_frames[addr] 
+					for addr in unit_bsprite_frame_tbl_addrs
+				]
+
+			self.unit_bsprite_frame_addrs[bank_idx] = [
+				rom_addrs(addr, num_frames)
+				for addr, num_frames in 
+					zip(unit_bsprite_frame_tbl_addrs, unit_sprite_frames)
+			]
+
+			bg_frame_tbl_addr = rom_addrs(0xbffa)[0]
+			self.bsprite_bg_frame_addrs[bank_idx] = (
+				rom_addrs(bg_frame_tbl_addr, num_bg_frames))
+
+			facing_tbl_addrs = rom_addrs(0xbffc, 2)
+			facing_addrs = [
+				rom_addrs(addr, block_size) 
+				for addr in facing_tbl_addrs
+			]
+			self.unit_bsprite_bg_frame_tbl_addrs[bank_idx] = facing_addrs
+
+		leca = get_leca4((5, 15))
+		self.unit_bsprite_chr_banks = rom_bytes(0x9169, num_ext_units)
+		self.unit_bsprite_init_frame_tbl_addrs = (
+			rom_addrs(0x9258, num_ext_units))
+		self.unit_bsprite_init_frame_idcs = [
+			rom_bytes(addr, length)
+			for addr, length in zip(
+				self.unit_bsprite_init_frame_tbl_addrs,
+				(4, 4, 4, 4, 4, 3, 2, 2, 1, 3, 3, 3, 5, 
+					3, 3, 1, 1, 1, 2, 2, 9, 1, 1, 5),
+			)]
+
+		self.unit_battle_script_data_addrs = rom_addrs(0x91b1, num_ext_units)
+		self.unit_battle_script_datas = [
+			rom_bytes(addr, length)
+			for addr, length in zip(
+				self.unit_battle_script_data_addrs,
+				(4, 4, 4, 4, 4, 3, 2, 2, 1, 3, 3, 3, 10, 
+					3, 3, 1, 1, 12, 2, 13, 9, 1, 7, 10),
+			)]
+
+		self.unit_battle_script_idcs = []
+		for unit_idx, num_scripts in enumerate((
+			4, 4, 4, 4, 4, 3, 2, 2, 1, 3, 3, 3, 5, 
+			3, 3, 1, 1, 1, 2, 2, 9, 1, 1, tuple(range(0, 10, 2))
+		)):
+			data = self.unit_battle_script_datas[unit_idx]
+			if isinstance(num_scripts, int):
+				idcs = ((c_uint8 * num_scripts).from_buffer(data) 
+					if num_scripts != len(data) else data)
+			else:
+				idcs = [data[idx] for idx in num_scripts]
+
+			self.unit_battle_script_idcs.append(idcs)
+
+		load_lists = functools.partial(
+			load_term_lists, rom, leca, end_offs = self._chr_start_offs)
+		self.battle_script_addrs, self.battle_scripts = load_lists(
+			0xb04f, 0x31, ty = BattleScriptOp, terms = 0xe)
+
+		self.bfx_script_addrs, self.bfx_scripts = load_lists(
+			0xb6c6, 0x23, ty = BattleScriptOp, terms = 0)
+
+		self.base_battle_pal_pack_addr = rom_addrs(0xbcee)[0]
+		self.base_battle_pal_pack = (
+			Packet(rom, leca(self.base_battle_pal_pack_addr)))
+
+		self.battle_script_packet_addrs = rom_addrs(0xa1d4, 4)
+		self.battle_script_packets = []
+		for base_addr in self.battle_script_packet_addrs:
+			packets = []
+			addr = base_addr
+
+			while rom[leca(addr)]:
+				packet = Packet(rom, leca(addr))
+				packets.append(packet)
+
+				addr += packet.size
+
+			self.battle_script_packets.append(packets)
+
+		self.battle_unit_spec_frame_idcs = (
+			((c_uint8 * 2) * num_units).from_buffer(rom, leca(0xa0f3)))
+		self.battle_flock_anim_x_offs = (
+			((c_int8 * 2) * 7).from_buffer(rom, leca(0xa1c6)))
+
+		self.battle_proj_data = (
+			((c_uint8 * 2) * 3).from_buffer(rom, leca(0xb8b5)))
+		self.battle_proj_y_pos = rom_bytes(0xb8bb, 3)
+		self.unit_battle_proj_frame_idcs = rom_bytes(0x9abd, 5)
+		self.unit_battle_proj_y_offs = (
+			(c_int8 * 5).from_buffer(rom, leca(0x9ab8)))
+		self.unit_battle_proj_chr_bank = 2
+
+		offs = leca(0x9f70)
+		self.battle_hit_shake_offs = (
+			rom_bytes(0x9f70, rom.index(0, offs) - offs + 1))
+
+		self.battle_team_hit_pal_idcs = rom_bytes(0xa042, 2)
+		self.battle_team_unit_pal_idcs = (
+			((c_uint8 * num_ext_units) * 2).from_buffer(rom, leca(0x9181)))
+		self.battle_mamkute_stone_pal_idcs = rom_bytes(0x915e, 11)
+		self.battle_pal_row_addrs = rom_addrs(0xbd16, 0x31)
+		self.battle_pal_rows = [
+			rom_bytes(addr, 4) 
+			for addr in self.battle_pal_row_addrs
+		]
+		self.battle_team_death_pal_idcs_addrs = rom_addrs(0x9ee9, 2)
+		self.battle_team_death_pal_idcs, self.battle_team_peg_death_pal_idcs = (
+			((c_uint8 * 4) * 2).from_buffer(rom, leca(addr))
+			for addr in self.battle_team_death_pal_idcs_addrs
+		)
+
+		leca = get_leca4((0, 15))
+		load_lists = functools.partial(
+			load_term_lists, rom, leca, end_offs = self._chr_start_offs)
+		self.bmov_script_addrs, self.bmov_scripts = load_lists(
+			0xac52, 0x21, terms = 0xff)
+		self.unit_proj_bmov_script_idx = 0x1b # Is 0x1b correct?
+
+		self.bpath_script_addrs, self.bpath_scripts = load_lists(
+			0xadee, 0x32, ty = XyOffset, terms = 0x80)
+		self.banim_script_frame_cnts_addrs, self.banim_script_frame_cnts = load_lists(
+			0x9fe0,
+			0x19,
+			terms = (BAnimScriptFrameOps.Restart, BAnimScriptFrameOps.End),
+			include_term = True,
+		)
+		self.banim_script_addrs = (type(self.banim_script_frame_cnts_addrs)
+			.from_buffer(rom, leca(0x9fae)))
+		self.banim_scripts = [
+			((c_uint8 * (len(self.banim_script_frame_cnts[idx]) - 1))
+				.from_buffer(rom, leca(addr)))
+			for idx, addr in enumerate(self.banim_script_addrs)
+		]
+
+		return
+
 	def _load_text(self):
 		rom = self._rom
 		leca = self.miss_info_leca = get_leca4((3, 15))
@@ -578,6 +835,9 @@ class FireEmblem1Data:
 
 		num_parts = rom[metasprite_offs]
 		return (MetaspriteType2Sprite * num_parts).from_buffer(rom, metasprite_offs + 1)
+
+	def _load_bg_metasprite(self, msprite_offs):
+		return BgMetasprite(self._rom, msprite_offs)
 
 	def get_pre_miss_info(self, miss_idx):
 		return PreMissionInfo.from_buffer(self._rom, self.miss_info_leca(self.pre_miss_info_addrs[miss_idx - 1]))
@@ -705,6 +965,9 @@ class FireEmblem1Data:
 			(pos[0].max() + 8, pos[1].max() + 8),
 		), dtype = int)
 
+	def hflip_sprite_type2_bounds(self, left_or_x, right = None):
+		return (16 - right, 16 - left_or_x) if right is not None else (16 - left_or_x)
+
 	def draw_sprite_type2(self, bitmap, chr_bank, metasprite, x = 0, y = 0, *, pal_idx = None, hi_pal = False, hflipped = False, pre_set_bits = 0, clear_bits = 0, post_set_bits = 0):
 		flip_axes_lists = (tuple(), (1,), (0,), (0, 1))
 		hflip_flag = 0x40 if hflipped else 0
@@ -753,6 +1016,25 @@ class FireEmblem1Data:
 				hflipped = hflipped, 
 				v38 = v38,
 			)
+
+	def get_bg_sprite_bounds(self, msprite):
+		rel_pos = np.array([row.rel_pos for row in msprite.rows], dtype = int)
+		sizes = np.array([
+			((len(row.tiles), 1) if row.hdr.vertical else (1, len(row.tiles))) 
+			for row in msprite.rows
+		], dtype = int)
+		ubounds = rel_pos + sizes
+
+		return np.array((rel_pos.min(0), ubounds.max(0)), dtype = int)
+
+	def draw_bg_sprite_chrs(self, chr_map, msprite, x = 0, y = 0):
+		base_pos = np.array((y, x), dtype = int)
+		for row in msprite.rows:
+			pos = base_pos + row.rel_pos
+			if row.hdr.vertical:
+				chr_map[pos[0]:pos[0] + len(row.tiles), pos[1]] = row.tiles
+			else:
+				chr_map[pos[0], pos[1]:pos[1] + len(row.tiles)] = row.tiles
 
 	def draw_portrait(self, port, *, chr_bank = None, hflipped = False, v38 = 0, v39 = 0):
 		port_size = (64, 64)
